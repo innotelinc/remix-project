@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import copy from 'copy-to-clipboard'
-import { Placement } from 'react-bootstrap/esm/Overlay'
+import { Placement } from 'react-bootstrap/esm/types'
 
 import './copy-to-clipboard.css'
 import { CustomTooltip } from '@remix-ui/helper'
@@ -15,9 +15,10 @@ interface ICopyToClipboard {
   children?: JSX.Element
   getContent?: () => any
   callback?: () => void
+  classList?: string
 }
 export const CopyToClipboard = (props: ICopyToClipboard) => {
-  const { tip = 'Copy', icon = 'fa-copy', direction = 'right', getContent, children, callback, ...otherProps } = props
+  const { tip = 'Copy', icon = 'fa-copy', classList = ' ms-1 p-2', direction = 'right', getContent, children, callback, ...otherProps } = props
   let { content } = props
   const [message, setMessage] = useState(tip)
 
@@ -54,14 +55,14 @@ export const CopyToClipboard = (props: ICopyToClipboard) => {
     setTimeout(() => setMessage(tip), 500)
   }
 
-  const childJSX = children || <i className={`far ${icon} ml-1 p-2`} aria-hidden="true" {...otherProps}></i>
+  const childJSX = children || <i className={`far ${icon} ${classList}`} aria-hidden="true" {...otherProps}></i>
 
   return (
-    <a href="#" onClick={handleClick} onMouseLeave={reset}>
+    <span onClick={handleClick} onMouseLeave={reset} style={{ cursor: 'pointer' }}>
       <CustomTooltip tooltipText={message} tooltipId="overlay-tooltip" placement={direction}>
         {childJSX}
       </CustomTooltip>
-    </a>
+    </span>
   )
 }
 

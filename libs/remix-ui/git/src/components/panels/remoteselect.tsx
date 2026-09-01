@@ -10,6 +10,7 @@ import GitUIButton from "../buttons/gituibutton";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faSync } from "@fortawesome/free-solid-svg-icons";
 import { branch } from "@remix-api";
+import { FormattedMessage } from "react-intl";
 
 export interface RemoteSelectProps {
   remote: remote
@@ -46,7 +47,7 @@ export const Remoteselect = (props: RemoteSelectProps) => {
     <>
       <Accordion activeKey={activePanel} defaultActiveKey=''>
         <RemotesDetailsNavigation callback={setActivePanel} eventKey="0" activePanel={activePanel} remote={remote} />
-        <Accordion.Collapse className="pl-2 border-left ml-1" eventKey="0">
+        <Accordion.Collapse className="ps-2 border-start ms-1" eventKey="0">
           <>
             {context.branches && remoteBranches
               .slice(0, remoteBranchPage * pageLength)
@@ -57,12 +58,12 @@ export const Remoteselect = (props: RemoteSelectProps) => {
               })}
             {context.branches && remoteBranches.length > remoteBranchPage * pageLength && <><GitUIButton className="btn btn-sm" onClick={() => {
               setRemoteBranchPage(remoteBranchPage + 1);
-            }}>Show more</GitUIButton><br></br></>}
+            }}><FormattedMessage id="gitui.showMore" /></GitUIButton><br></br></>}
             <GitUIButton data-id={`remote-sync-${remote.name}`} className="btn btn-sm" onClick={async () => {
               await actions.fetch({
                 remote
               })
-            }}><FontAwesomeIcon icon={faSync} ></FontAwesomeIcon><label className="pl-1">Fetch more from remote</label></GitUIButton>
+            }}><FontAwesomeIcon icon={faSync} ></FontAwesomeIcon><label className="ps-1"><FormattedMessage id="gitui.fetchMoreFromRemote" /></label></GitUIButton>
           </>
 
         </Accordion.Collapse>

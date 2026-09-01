@@ -3,16 +3,33 @@ import { toast } from 'react-toastify'
 import groupBy from 'lodash/groupBy'
 import pick from 'lodash/pick'
 import { type ModelType } from '../store'
-import remixClient from '../../remix-client'
 import { router } from '../../App'
+import { trackMatomoEvent } from '@remix-api'
+import { endpointUrls } from '@remix-endpoints-helper'
+import remixClient from '../../remix-client'
 
 // const apiUrl = 'http://localhost:3001';
-const apiUrl = 'https://static.220.14.12.49.clients.your-server.de:3000'
+const apiUrl = endpointUrls.learneth
+
+export const repoMap = {
+  en: {
+    name: 'remix-project-org/remix-workshops',
+    branch: 'master',
+  },
+  zh: {
+    name: 'remix-project-org/remix-workshops',
+    branch: 'zh',
+  },
+  es: {
+    name: 'remix-project-org/remix-workshops',
+    branch: 'es',
+  },
+}
 
 const Model: ModelType = {
   namespace: 'workshop',
   state: {
-    list: [],
+    list: Object.keys(repoMap).map(item => repoMap[item]),
     detail: {},
     selectedId: '',
   },
@@ -22,26 +39,9 @@ const Model: ModelType = {
     },
   },
   effects: {
-    *init(_, { put }) {
-      const cache = null // don't use cache because remote might change
-
-      if (cache) {
-        const workshopState = JSON.parse(cache)
-        yield put({
-          type: 'workshop/save',
-          payload: workshopState,
-        })
-      } else {
-        yield put({
-          type: 'workshop/loadRepo',
-          payload: {
-            name: 'ethereum/remix-workshops',
-            branch: 'master',
-          },
-        })
-      }
-    },
     *loadRepo({ payload }, { put, select }) {
+      yield router.navigate('/home')
+
       toast.info(`loading ${payload.name}/${payload.branch}`)
 
       yield put({
@@ -54,7 +54,56 @@ const Model: ModelType = {
       const { list, detail } = yield select((state) => state.workshop)
 
       const url = `${apiUrl}/clone/${encodeURIComponent(payload.name)}/${payload.branch}?${Math.random()}`
-      const { data } = yield axios.get(url)
+
+      let data
+      try {
+        const response = yield axios.get(url)
+        data = response.data
+      } catch (error) {
+        console.error('Failed to load workshop:', error)
+
+        // Dismiss loading toast and show error
+        toast.dismiss()
+
+        // Extract detailed error message from response
+        let errorMessage = 'Failed to load workshop'
+        if (error.response?.data) {
+          // If the response contains plain text error details (like in the screenshot)
+          if (typeof error.response.data === 'string') {
+            errorMessage = error.response.data
+          }
+          // If the response has a structured error message
+          else if (error.response.data.message) {
+            errorMessage = error.response.data.message
+          }
+          // If the response has error details
+          else if (error.response.data.error) {
+            errorMessage = error.response.data.error
+          }
+        }
+        // Fallback to axios error message or generic error
+        else if (error.message) {
+          errorMessage = error.message
+        } else {
+          errorMessage = 'Network error occurred'
+        }
+
+        toast.error(errorMessage)
+
+        // Clean up loading state
+        yield put({
+          type: 'loading/save',
+          payload: {
+            screen: false,
+          },
+        })
+
+        // Track error event
+        trackMatomoEvent(remixClient, { category: 'learneth', action: 'load_repo_error', name: `${payload.name}/${payload.branch}`, isClick: false })
+
+        return // Exit early on error
+      }
+
       const repoId = `${payload.name}-${payload.branch}`
 
       for (let i = 0; i < data.ids.length; i++) {
@@ -111,14 +160,13 @@ const Model: ModelType = {
             ...payload,
           },
         },
-        list: detail[repoId] ? list : [...list, payload],
+        list: list.map(item => `${item.name}/${item.branch}`).includes(`${payload.name}/${payload.branch}`) ? list : [...list, payload],
         selectedId: repoId,
       }
       yield put({
         type: 'workshop/save',
         payload: workshopState,
       })
-      localStorage.setItem('workshop.state', JSON.stringify(workshopState))
 
       toast.dismiss()
       yield put({
@@ -133,30 +181,32 @@ const Model: ModelType = {
         const { ids, entities } = detail[selectedId]
         for (let i = 0; i < ids.length; i++) {
           const entity = entities[ids[i]]
-          if (entity.metadata.data.id === payload.id || i + 1 === payload.id) {
+          if (entity.metadata.data.name === payload.id || entity.metadata.data.id === payload.id || i + 1 === payload.id) {
             yield router.navigate(`/list?id=${ids[i]}`)
             break
           }
         }
       }
-      (<any>window)._paq.push(['trackEvent', 'learneth', 'load_repo', payload.name])
+      // we don't need to track the default repos
+      if (payload.name !== 'ethereum/remix-workshops' && payload.name !== 'remix-project-org/remix-workshops') {
+        trackMatomoEvent(remixClient, { category: 'learneth', action: 'load_repo', name: payload.name, isClick: false })
+      }
     },
-    *resetAll(_, { put }) {
+    *resetAll({ payload }, { put }) {
       yield put({
         type: 'workshop/save',
         payload: {
-          list: [],
+          list: Object.keys(repoMap).map(item => repoMap[item]),
           detail: {},
           selectedId: '',
         },
       })
 
-      localStorage.removeItem('workshop.state')
-
       yield put({
-        type: 'workshop/init',
+        type: 'workshop/loadRepo',
+        payload: repoMap[payload.code]
       });
-      (<any>window)._paq.push(['trackEvent', 'learneth', 'reset_all'])
+      trackMatomoEvent(remixClient, { category: 'learneth', action: 'reset_all', isClick: true })
     },
   },
 }

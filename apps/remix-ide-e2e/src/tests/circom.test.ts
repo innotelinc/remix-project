@@ -5,17 +5,24 @@ import init from '../helpers/init'
 module.exports = {
   '@disabled': true,
   before: function (browser: NightwatchBrowser, done: VoidFunction) {
+    browser.globals.asyncHookTimeout = 30000000;
     init(browser, done)
   },
 
   'Should create semaphore workspace template #group1 #group2 #group3 #group4': function (browser: NightwatchBrowser) {
     browser
       .clickLaunchIcon('filePanel')
-      .click('*[data-id="workspacesMenuDropdown"]')
+      .clickWorkspaceDropdown()
+      .pause(2000)
       .click('*[data-id="workspacecreate"]')
-      .waitForElementPresent('*[data-id="create-semaphore"]')
-      .scrollAndClick('*[data-id="create-semaphore"]')
-      .modalFooterOKClick('TemplatesSelection')
+      .waitForElementVisible('*[data-id="template-explorer-modal-react"]')
+      .waitForElementVisible('*[data-id="template-explorer-template-container"]')
+      .click('*[data-id="template-explorer-template-container"]')
+      .waitForElementVisible('*[data-id="template-explorer-template-container"]')
+      .scrollInto('*[data-id="template-category-Circom ZKP"]')
+      .waitForElementVisible('*[data-id="template-card-semaphore-0"]')
+      .click('*[data-id="template-card-semaphore-0"]')
+      .click('*[data-id="validate-semaphoreworkspace-button"]')
       .waitForElementVisible('*[data-id="treeViewLitreeViewItemcircuits"]')
       .waitForElementVisible('*[data-id="treeViewLitreeViewItemcircuits/semaphore.circom"]')
       .waitForElementVisible('*[data-id="treeViewLitreeViewItemscripts"]')
@@ -32,13 +39,15 @@ module.exports = {
   'Should compile a simple circuit using editor play button #group1': function (browser: NightwatchBrowser) {
     browser
       .click('[data-id="treeViewLitreeViewItemcircuits/simple.circom"]')
-      .waitForElementPresent('[data-path="Semaphore - 1/circuits/simple.circom"]')
-      .waitForElementVisible('[data-path="Semaphore - 1/circuits/simple.circom"]')
+      .waitForElementPresent('[data-path="circuits/simple.circom"]')
+      .waitForElementVisible('[data-path="circuits/simple.circom"]')
       .waitForElementPresent('[data-id="verticalIconsKindcircuit-compiler"]')
       .waitForElementVisible('[data-id="verticalIconsKindcircuit-compiler"]')
-      .click('[data-id="play-editor"]')
-      .waitForElementPresent('[data-id="treeViewLitreeViewItemcircuits/.bin/simple.wasm"]')
-      .waitForElementVisible('[data-id="treeViewLitreeViewItemcircuits/.bin/simple.wasm"]')
+      .click('[data-id="compile-action"]')
+      .waitForElementContainsText('*[data-id="terminalJournal"]', 'Everything went okay')
+      .waitForElementPresent('[data-id="treeViewLitreeViewItemcircuits/.bin/simple_js"]')
+      .openFile('circuits/.bin/simple_js')
+      .waitForElementPresent('[data-id="treeViewLitreeViewItemcircuits/.bin/simple_js/simple.wasm"]')
   },
   'Should compute a witness for a simple circuit #group1': function (browser: NightwatchBrowser) {
     browser
@@ -54,14 +63,16 @@ module.exports = {
       .click('[data-id="compute_witness_btn"]')
       .frameParent()
       .clickLaunchIcon('filePanel')
-      .waitForElementPresent('[data-id="treeViewLitreeViewItemcircuits/.bin/simple.wtn"]')
-      .waitForElementVisible('[data-id="treeViewLitreeViewItemcircuits/.bin/simple.wtn"]')
+      .pause(5000)
+      .openFile('circuits/.bin/simple_js/simple.wtn')
+      .waitForElementPresent('[data-id="treeViewLitreeViewItemcircuits/.bin/simple_js/simple.wtn"]')
+      .waitForElementVisible('[data-id="treeViewLitreeViewItemcircuits/.bin/simple_js/simple.wtn"]')
   },
   'Should compile a simple circuit using compile button in circom plugin #group2': function (browser: NightwatchBrowser) {
     browser
       .click('[data-id="treeViewLitreeViewItemcircuits/simple.circom"]')
-      .waitForElementPresent('[data-path="Semaphore - 1/circuits/simple.circom"]')
-      .waitForElementVisible('[data-path="Semaphore - 1/circuits/simple.circom"]')
+      .waitForElementPresent('[data-path="circuits/simple.circom"]')
+      .waitForElementVisible('[data-path="circuits/simple.circom"]')
       .clickLaunchIcon('circuit-compiler')
       .frame(0)
       .waitForElementPresent('button[data-id="compile_circuit_btn"]')
@@ -69,8 +80,9 @@ module.exports = {
       .click('button[data-id="compile_circuit_btn"]')
       .frameParent()
       .clickLaunchIcon('filePanel')
-      .waitForElementPresent('[data-id="treeViewLitreeViewItemcircuits/.bin/simple.wasm"]')
-      .waitForElementVisible('[data-id="treeViewLitreeViewItemcircuits/.bin/simple.wasm"]')
+      .openFile('circuits/.bin/simple_js/simple.wasm')
+      .waitForElementPresent('[data-id="treeViewLitreeViewItemcircuits/.bin/simple_js/simple.wasm"]')
+      .waitForElementVisible('[data-id="treeViewLitreeViewItemcircuits/.bin/simple_js/simple.wasm"]')
   },
   'Should run Groth16 setup and export for a simple circuit using the GUI #group2': function (browser: NightwatchBrowser) {
     browser
@@ -87,6 +99,7 @@ module.exports = {
       .waitForElementVisible('[data-id="setup_exports_toggler"] .fa-check-circle')
       .frameParent()
       .clickLaunchIcon('filePanel')
+      .openFile('circuits/groth16/zk/keys/verification_key.json')
       .waitForElementVisible('*[data-id="treeViewLitreeViewItemcircuits/groth16/zk/keys/verification_key.json"]')
   },
   'Should run Plonk setup and export for a simple circuit using the GUI #group2': function (browser: NightwatchBrowser) {
@@ -101,28 +114,34 @@ module.exports = {
       .waitForElementVisible('[data-id="setup_exports_toggler"] .fa-check-circle')
       .frameParent()
       .clickLaunchIcon('filePanel')
+      .openFile('circuits/plonk/zk/keys/verification_key.json')
       .waitForElementVisible('*[data-id="treeViewLitreeViewItemcircuits/plonk/zk/keys/verification_key.json"]')
   },
   'Should compile a simple circuit using CTRL + S from the editor #group3': function (browser: NightwatchBrowser) {
     browser
       .click('[data-id="treeViewLitreeViewItemcircuits/simple.circom"]')
-      .waitForElementPresent('[data-path="Semaphore - 1/circuits/simple.circom"]')
-      .waitForElementVisible('[data-path="Semaphore - 1/circuits/simple.circom"]')
+      .waitForElementPresent('[data-path="circuits/simple.circom"]')
+      .waitForElementVisible('[data-path="circuits/simple.circom"]')
       .waitForElementPresent('[data-id="verticalIconsKindcircuit-compiler"]')
       .waitForElementVisible('[data-id="verticalIconsKindcircuit-compiler"]')
       .perform(function () {
-        const actions = this.actions({async: true})
+        const actions = this.actions({ async: true })
 
-        return actions.keyDown(this.Keys.CONTROL).sendKeys('s')
+        actions.keyDown(this.Keys.CONTROL).sendKeys('s').perform()
+        return actions.keyUp(this.Keys.CONTROL).perform()
       })
-      .waitForElementPresent('[data-id="treeViewLitreeViewItemcircuits/.bin/simple.wasm"]')
-      .waitForElementVisible('[data-id="treeViewLitreeViewItemcircuits/.bin/simple.wasm"]')
+      .click('[data-id="treeViewDivtreeViewItemREADME.md"]')
+      .waitForElementVisible('*[data-id="treeViewDivtreeViewItemcircuits/.bin/simple_js"]')
+      .click('*[data-id="treeViewDivtreeViewItemcircuits/.bin/simple_js"]')
+      // .openFile('circuits/.bin/simple_js/simple.wasm')
+      .waitForElementPresent('[data-id="treeViewLitreeViewItemcircuits/.bin/simple_js/simple.wasm"]')
+      .waitForElementVisible('[data-id="treeViewLitreeViewItemcircuits/.bin/simple_js/simple.wasm"]')
   },
   'Should display warnings for compiled circuit without pragma version #group4': function (browser: NightwatchBrowser) {
     browser
       .click('[data-id="treeViewLitreeViewItemcircuits/simple.circom"]')
-      .waitForElementPresent('[data-path="Semaphore - 1/circuits/simple.circom"]')
-      .waitForElementVisible('[data-path="Semaphore - 1/circuits/simple.circom"]')
+      .waitForElementPresent('[data-path="circuits/simple.circom"]')
+      .waitForElementVisible('[data-path="circuits/simple.circom"]')
       .setEditorValue(warningCircuit)
       .clickLaunchIcon('circuit-compiler')
       .frame(0)
@@ -163,16 +182,17 @@ module.exports = {
       .waitForElementNotPresent('[data-id="circuit_feedback"]')
       .frameParent()
       .clickLaunchIcon('filePanel')
-      .waitForElementPresent('[data-id="treeViewLitreeViewItemcircuits/.bin/simple.wasm"]')
+      .openFile('circuits/.bin/simple_js/simple.wasm')
+      .waitForElementPresent('[data-id="treeViewLitreeViewItemcircuits/.bin/simple_js/simple.wasm"]')
   },
   'Should create a new workspace using hash checker template #group5 #group6': function (browser: NightwatchBrowser) {
     browser
       .clickLaunchIcon('filePanel')
-      .click('*[data-id="workspacesMenuDropdown"]')
+      .clickWorkspaceDropdown()
       .click('*[data-id="workspacecreate"]')
-      .waitForElementPresent('*[data-id="create-hashchecker"]')
-      .scrollAndClick('*[data-id="create-hashchecker"]')
-      .modalFooterOKClick('TemplatesSelection')
+      .waitForElementPresent('*[data-id="template-card-hashchecker-1"]')
+      .click('*[data-id="template-card-hashchecker-1"]')
+      .click('*[data-id="validate-hashcheckerworkspace-button"]')
       .pause(100)
       .waitForElementVisible('*[data-id="treeViewLitreeViewItemcircuits"]')
       .waitForElementVisible('*[data-id="treeViewLitreeViewItemcircuits/calculate_hash.circom"]')
@@ -190,12 +210,12 @@ module.exports = {
   'Should run groth16 trusted setup script for hash checker #group5': function (browser: NightwatchBrowser) {
     browser
       .click('[data-id="treeViewLitreeViewItemscripts/groth16/groth16_trusted_setup.ts"]')
-      .waitForElementPresent('[data-path="Hash Checker - 1/scripts/groth16/groth16_trusted_setup.ts"]')
-      .waitForElementVisible('[data-path="Hash Checker - 1/scripts/groth16/groth16_trusted_setup.ts"]')
+      .waitForElementPresent('[data-path="scripts/groth16/groth16_trusted_setup.ts"]')
+      .waitForElementVisible('[data-path="scripts/groth16/groth16_trusted_setup.ts"]')
       .waitForElementPresent('[data-id="verticalIconsKindcircuit-compiler"]')
       .waitForElementVisible('[data-id="verticalIconsKindcircuit-compiler"]')
-      .click('[data-id="play-editor"]')
-      .pause(7000)
+      .click('[data-id="compile-action"]')
+      .pause(10000)
       .journalLastChildIncludes('newZkey')
       .pause(25000)
       .journalLastChildIncludes('setup done.')
@@ -204,11 +224,11 @@ module.exports = {
   'Should run groth16 zkproof script for hash checker #group5': function (browser: NightwatchBrowser) {
     browser
       .click('[data-id="treeViewLitreeViewItemscripts/groth16/groth16_zkproof.ts"]')
-      .waitForElementPresent('[data-path="Hash Checker - 1/scripts/groth16/groth16_zkproof.ts"]')
-      .waitForElementVisible('[data-path="Hash Checker - 1/scripts/groth16/groth16_zkproof.ts"]')
+      .waitForElementPresent('[data-path="scripts/groth16/groth16_zkproof.ts"]')
+      .waitForElementVisible('[data-path="scripts/groth16/groth16_zkproof.ts"]')
       .waitForElementPresent('[data-id="verticalIconsKindcircuit-compiler"]')
       .waitForElementVisible('[data-id="verticalIconsKindcircuit-compiler"]')
-      .click('[data-id="play-editor"]')
+      .click('[data-id="compile-action"]')
       .pause(2000)
       .journalLastChildIncludes('Compiling circuits/calculate_hash.circom')
       .pause(5000)
@@ -224,11 +244,11 @@ module.exports = {
   'Should run plonk trusted setup script for hash checker #group6': function (browser: NightwatchBrowser) {
     browser
       .click('[data-id="treeViewLitreeViewItemscripts/plonk/plonk_trusted_setup.ts"]')
-      .waitForElementPresent('[data-path="Hash Checker - 1/scripts/plonk/plonk_trusted_setup.ts"]')
-      .waitForElementVisible('[data-path="Hash Checker - 1/scripts/plonk/plonk_trusted_setup.ts"]')
+      .waitForElementPresent('[data-path="scripts/plonk/plonk_trusted_setup.ts"]')
+      .waitForElementVisible('[data-path="scripts/plonk/plonk_trusted_setup.ts"]')
       .waitForElementPresent('[data-id="verticalIconsKindcircuit-compiler"]')
       .waitForElementVisible('[data-id="verticalIconsKindcircuit-compiler"]')
-      .click('[data-id="play-editor"]')
+      .click('[data-id="compile-action"]')
       .pause(7000)
       .journalLastChildIncludes('plonk setup')
       .pause(10000)
@@ -238,11 +258,11 @@ module.exports = {
   'Should run plonk zkproof script for hash checker #group6': function (browser: NightwatchBrowser) {
     browser
       .click('[data-id="treeViewLitreeViewItemscripts/plonk/plonk_zkproof.ts"]')
-      .waitForElementPresent('[data-path="Hash Checker - 1/scripts/plonk/plonk_zkproof.ts"]')
-      .waitForElementVisible('[data-path="Hash Checker - 1/scripts/plonk/plonk_zkproof.ts"]')
+      .waitForElementPresent('[data-path="scripts/plonk/plonk_zkproof.ts"]')
+      .waitForElementVisible('[data-path="scripts/plonk/plonk_zkproof.ts"]')
       .waitForElementPresent('[data-id="verticalIconsKindcircuit-compiler"]')
       .waitForElementVisible('[data-id="verticalIconsKindcircuit-compiler"]')
-      .click('[data-id="play-editor"]')
+      .click('[data-id="compile-action"]')
       .pause(2000)
       .journalLastChildIncludes('Compiling circuits/calculate_hash.circom')
       .pause(5000)

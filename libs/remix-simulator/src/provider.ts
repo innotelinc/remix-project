@@ -6,11 +6,12 @@ import merge from 'merge'
 import { Web3Accounts } from './methods/accounts'
 import { Filters } from './methods/filters'
 import { methods as miscMethods } from './methods/misc'
-import { methods as netMethods } from './methods/net'
+import { Net } from './methods/net'
 import { Transactions } from './methods/transactions'
+import { Miner } from './methods/miner'
 import { Debug } from './methods/debug'
+import { EVM } from './methods/evm'
 import { VMContext } from './vm-context'
-import { Web3PluginBase } from 'web3'
 
 export interface JSONRPCRequestPayload {
   params: any[];
@@ -30,9 +31,11 @@ export type JSONRPCResponseCallback = (err: Error, result?: JSONRPCResponsePaylo
 export type State = Record<string, string>
 
 export type ProviderOptions = {
+  chainId?: number
   fork?: string,
   nodeUrl?: string,
   blockNumber?: number | 'latest',
+  baseBlockNumber?: string, // hex
   stateDb?: State,
   details?: boolean
   blocks?: string[],
@@ -47,14 +50,15 @@ export class Provider {
   methods
   connected: boolean
   initialized: boolean
+  initializing: boolean
   pendingRequests: Array<any>
 
   constructor (options: ProviderOptions = {} as ProviderOptions) {
     this.options = options
     this.connected = true
-    this.vmContext = new VMContext(options['fork'], options['nodeUrl'], options['blockNumber'], options['stateDb'], options['blocks'])
+    this.vmContext = new VMContext(options['fork'], options['nodeUrl'], options['blockNumber'], options['stateDb'], options['blocks'], options['baseBlockNumber'])
 
-    this.Accounts = new Web3Accounts(this.vmContext)
+    this.Accounts = new Web3Accounts(this.vmContext, options)
     this.Transactions = new Transactions(this.vmContext)
 
     this.methods = {}
@@ -62,12 +66,15 @@ export class Provider {
     this.methods = merge(this.methods, (new Blocks(this.vmContext, options)).methods())
     this.methods = merge(this.methods, miscMethods())
     this.methods = merge(this.methods, (new Filters(this.vmContext)).methods())
-    this.methods = merge(this.methods, netMethods())
+    this.methods = merge(this.methods, (new Net(this.vmContext, options)).methods())
     this.methods = merge(this.methods, this.Transactions.methods())
     this.methods = merge(this.methods, (new Debug(this.vmContext)).methods())
+    this.methods = merge(this.methods, (new EVM(this.vmContext, this.Transactions)).methods())
+    this.methods = merge(this.methods, (new Miner(this.vmContext)).methods())
   }
 
   async init () {
+    this.initializing = true
     this.initialized = false
     this.pendingRequests = []
     await this.vmContext.init()
@@ -80,6 +87,7 @@ export class Provider {
       })
       this.pendingRequests = []
     }
+    this.initializing = false
   }
 
   _send(payload: JSONRPCRequestPayload, callback: (err: Error, result?: JSONRPCResponsePayload) => void) {
@@ -149,54 +157,31 @@ export class Provider {
   }
 }
 
-export function extend (web3) {
-  if (!web3.remix){
-    web3.registerPlugin(new Web3TestPlugin())
-  }
-}
+export function extendProvider (provider) { // Provider should be ethers.js provider
 
-class Web3TestPlugin extends Web3PluginBase {
-  public pluginNamespace = 'remix'
+  if (!provider.remix) provider.remix = {}
 
-  public getExecutionResultFromSimulator(transactionHash) {
-    return this.requestManager.send({
-      method: 'eth_getExecutionResultFromSimulator',
-      params: [transactionHash]
-    })
+  provider.remix.getExecutionResultFromSimulator = async (transactionHash) => {
+    return await provider.send('eth_getExecutionResultFromSimulator', [transactionHash])
   }
 
-  public getHHLogsForTx(transactionHash) {
-    return this.requestManager.send({
-      method: 'eth_getHHLogsForTx',
-      params: [transactionHash]
-    })
+  provider.remix.getHHLogsForTx = async (transactionHash) => {
+    return await provider.send('eth_getHHLogsForTx',[transactionHash])
   }
 
-  public getHashFromTagBySimulator(timestamp) {
-    return this.requestManager.send({
-      method: 'eth_getHashFromTagBySimulator',
-      params: [timestamp]
-    })
+  provider.remix.getHashFromTagBySimulator = async (timestamp) => {
+    return await provider.send('eth_getHashFromTagBySimulator', [timestamp])
   }
 
-  public registerCallId(id) {
-    return this.requestManager.send({
-      method: 'eth_registerCallId',
-      params: [id]
-    })
+  provider.remix.registerCallId = async (id) => {
+    return await provider.send('eth_registerCallId',[id])
   }
 
-  public getStateDb() {
-    return this.requestManager.send({
-      method: 'eth_getStateDb',
-      params: []
-    })
+  provider.remix.getStateDb = async () => {
+    return await provider.send('eth_getStateDb', [])
   }
 
-  public getBlocksData() {
-    return this.requestManager.send({
-      method: 'eth_getBlocksData',
-      params: []
-    })
+  provider.remix.getBlocksData = async () => {
+    return await provider.send('eth_getBlocksData',[])
   }
 }

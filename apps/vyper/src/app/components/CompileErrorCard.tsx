@@ -1,8 +1,9 @@
 import {CopyToClipboard} from '@remix-ui/clipboard'
 import Reaact from 'react'
 import { RemixClient } from '../utils'
+import { VyperCompilationError} from '../utils/types'
 
-export function CompileErrorCard(props: { output: any, plugin: RemixClient }) {
+export function CompileErrorCard(props: { output: VyperCompilationError, plugin: RemixClient }) {
   return (
     <div
       id="vyperErrorResult"
@@ -10,7 +11,7 @@ export function CompileErrorCard(props: { output: any, plugin: RemixClient }) {
     >
       <span
         data-id="error-message"
-        className="text-left"
+        className="text-start"
         style={{
           overflowX: 'hidden',
           textOverflow: 'ellipsis',
@@ -23,8 +24,8 @@ export function CompileErrorCard(props: { output: any, plugin: RemixClient }) {
           <span className="border border-ai text-ai btn-sm" onClick={async () => await props.plugin.askGpt(props.output.message)}>
             Ask RemixAI
           </span>
-          <span className="ml-3 pt-1 py-1">
-            <CopyToClipboard content={props.output.message} className={`p-0 m-0 far fa-copy alert alert-danger`} direction={'top'} />
+          <span className="ms-3 pt-1 py-1">
+            <CopyToClipboard content={props.output.message} className={`p-0 m-0 far fa-copy alert alert-danger border-0`} direction={'top'} />
           </span>
         </div>
       </div>

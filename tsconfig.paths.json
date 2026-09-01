@@ -73,6 +73,12 @@
             "@remix-ui/modal-dialog": [
               "libs/remix-ui/modal-dialog/src/index.ts"
             ],
+            "@remix-ui/modal-help": [
+              "libs/remix-ui/modal-help/src/index.ts"
+            ],
+            "@remix-ui/plan-manager": [
+              "libs/remix-ui/plan-manager/src/index.ts"
+            ],
             "@remix-ui/panel": [
               "libs/remix-ui/panel/src/index.ts"
             ],
@@ -133,6 +139,9 @@
             "@remix-ui/toaster": [
               "libs/remix-ui/toaster/src/index.ts"
             ],
+            "@remix-ui/toggle": [
+              "libs/remix-ui/toggle/src/index.ts"
+            ],
             "@remix-ui/tooltip-popup": [
               "libs/remix-ui/tooltip-popup/src/index.ts"
             ],
@@ -166,6 +175,9 @@
             "@remix-ui/statusbar": [
               "libs/remix-ui/statusbar/src/index.ts"
             ],
+            "@remix-ui/walkthrough": [
+              "libs/remix-ui/walkthrough/src/index.ts"
+            ],
             "@remix-project/ghaction-helper": [
               "libs/ghaction-helper/src/index.ts"
             ],
@@ -175,14 +187,81 @@
             "@remix-ui/xterm": [
               "libs/remix-ui/xterm/src/index.ts"
             ],
-            "@remix-ui/git": [
-                "libs/remix-ui/git/src/index.ts"
+            "@remix-ui/remix-ai": [
+              "libs/remix-ui/remix-ai/src/index.ts"
             ],
+
+            "@remix/remix-ai-core": [
+              "libs/remix-ai-core/src/index.ts"
+            ],
+            "@remix/remix-ai-core/quick-dapp-thegraph-prompts": [
+              "libs/remix-ai-core/src/remix-mcp-server/prompts/quickDappTheGraphPrompts.ts"
+            ],
+            "@remix/remix-ai-core/quick-dapp-zk-prompts": [
+              "libs/remix-ai-core/src/remix-mcp-server/prompts/quickDappZkPrompts.ts"
+            ],
+            "@remix-ui/git": [
+              "libs/remix-ui/git/src/index.ts"
+            ],
+            "@remix-ui/environment-explorer": [
+              "libs/remix-ui/environment-explorer/src/index.ts"
+          ],
             "@remix-api": [
               "libs/remix-api/src/index.ts"
             ],
+            "@remix-scriptrunner": [
+              "libs/remix-ui/scriptrunner/src/index.ts"
+            ],
             "@remix-git": [
               "libs/remix-git/"
+            ],
+            "@remix-endpoints-helper": [
+              "libs/endpoints-helper/src/index.ts"
+            ],
+            "@remix-ui/remix-ai-assistant": [
+              "libs/remix-ui/remix-ai-assistant/src/index.ts"
+            ],
+            "@remix-ui/quick-dapp-v2": [
+              "libs/remix-ui/quick-dapp-v2/src/index.ts"
+            ],
+            "@remix-ui/top-bar": [
+              "libs/remix-ui/top-bar/src/index.ts"
+            ],
+            "@remix-ide/tracking": [
+              "apps/remix-ide/src/app/contexts/TrackingContext"
+            ],
+            "@remix-ui/login": [
+              "libs/remix-ui/login/src/index.ts"
+            ],
+            "@remix-ui/template-explorer-modal": [
+              "libs/remix-ui/template-explorer-modal/src/index.ts"
+            ],
+            "@remix-ui/invites": [
+              "libs/remix-ui/invites/src/index.ts"
+            ],
+            "@remix-ui/run-tab-environment": [
+              "libs/remix-ui/run-tab-environment/src/index.ts"
+            ],
+            "@remix-ui/run-tab-deploy": [
+              "libs/remix-ui/run-tab-deploy/src/index.ts"
+            ],
+            "@remix-ui/run-tab-deployed-contracts": [
+              "libs/remix-ui/run-tab-deployed-contracts/src/index.ts"
+            ],
+            "@remix-ui/run-tab-deployed-contracts/ens-contract-names": [
+              "libs/remix-ui/run-tab-deployed-contracts/src/lib/ens-contract-names.ts"
+            ],
+            "@remix-project/import-resolver": [
+              "libs/remix-import-resolver/src/index.ts"
+            ],
+            "@remix-ui/run-tab-transactions": [
+              "libs/remix-ui/run-tab-transactions/src/index.ts"
+            ],
+            "@remix-ui/thegraph": [
+              "libs/remix-ui/thegraph/src/index.ts"
+            ],
+            "@remix-project/remix-zkverify-core": [
+              "libs/remix-zkverify-core/src/index.ts"
             ]
         }
     }

@@ -3,30 +3,22 @@
 const EventManager = require('events')
 import FileProvider from "./fileProvider"
 
-class WorkspaceFileProvider extends FileProvider {
+export default class WorkspaceFileProvider extends FileProvider {
   constructor () {
     super('')
     this.workspacesPath = '.workspaces'
     this.workspace = null
     this.event = new EventManager()
 
-    try {
-      // make sure "code-sample" has been removed
-      window.remixFileSystem.exists(this.workspacesPath + '/code-sample').then((exist) => {
-        if (exist) window.remixFileSystem.unlink(this.workspacesPath + '/code-sample').catch((e) => {
-          console.log(e)
-        })
-      }).catch((e) => {
-        console.log(e)
-      })     
-    } catch (e) {
-      // we don't need to log error if this throws an error
-    }    
+    // Cleanup is now handled by the workspace initialization logic in remix-ui/workspace
+    // No need to run it here in the constructor to avoid slowing down startup
   }
 
   setWorkspace (workspace) {
-    if (!workspace) return
-    workspace = workspace.replace(/^\/|\/$/g, '') // remove first and last slash
+    const workspaceName = (workspace || {}).name ? workspace.name : workspace
+  
+    if (!workspaceName) return
+    workspace = workspaceName.replace(/^\/|\/$/g, '') // remove first and last slash
     this.workspace = workspace
   }
 

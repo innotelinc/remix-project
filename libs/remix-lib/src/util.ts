@@ -1,9 +1,8 @@
 'use strict'
 import { hash } from '@remix-project/remix-lib'
-import { bytesToHex, setLengthLeft, toBytes, addHexPrefix } from '@ethereumjs/util'
+import { setLengthLeft, toBytes, addHexPrefix } from '@ethereumjs/util'
 import stringSimilarity from 'string-similarity'
 import { BN } from 'bn.js'
-import { isBigInt } from 'web3-validator'
 
 /*
  contains misc util: @TODO should be split
@@ -54,6 +53,26 @@ export function toHexPaddedString(v: bigint | string): string {
   }
   else
     return '0x' + '0'.padStart(64, '0')
+}
+
+const hexByByte = Array.from({ length: 256 }, (v, i) => i.toString(16).padStart(2, '0'))
+export function bytesToHex (bytes: Uint8Array): any {
+  let hex = `0x`
+  if (bytes === undefined || bytes.length === 0) return hex
+  for (const byte of bytes) {
+    hex = `${hex}${hexByByte[byte]}`
+  }
+  return hex
+}
+
+export function padHexToEven(hex: string): string {
+  hex = hex.replace('0x', '')
+  // Check if the length of the hex string is odd
+  if (hex.length % 2 !== 0) {
+    // Add a leading zero
+    hex = '0' + hex;
+  }
+  return '0x' + hex;
 }
 
 /*
@@ -154,7 +173,7 @@ export function buildCallPath (index, rootCall) {
   */
 // eslint-disable-next-line camelcase
 export function sha3_256 (value) {
-  if ((value.constructor && value.constructor.name === 'BigNumber') || BN.isBN(value) || isBigInt(value)) {
+  if ((value.constructor && value.constructor.name === 'BigNumber') || BN.isBN(value) || (typeof value === 'bigint')) {
     value = value.toString(16)
   }
   if (typeof value === 'number') {
@@ -194,7 +213,7 @@ export function swarmHashExtractionPOC32 () {
 
 /**
   * return a regex which extract the cbor encoded metadata : {"ipfs": <IPFS hash>, "solc": <compiler version>} from the bytecode.
-  * ref https://solidity.readthedocs.io/en/v0.6.6/metadata.html?highlight=ipfs#encoding-of-the-metadata-hash-in-the-bytecode
+  * ref https://docs.soliditylang.org/en/v0.6.6/metadata.html?highlight=ipfs#encoding-of-the-metadata-hash-in-the-bytecode
   * @return {RegEx}
   */
 export function cborEncodedValueExtraction () {
@@ -273,9 +292,19 @@ export function compareByteCode (code1, code2) {
   if (code1 && code2) {
     if (code1.length !== code2.length) {
       // if the length isn't the same, we have an issue with extracting the metadata hash.
-      const minLength = code1.length > code2.length ? code2.length: code1.length
-      code1 = code1.substr(0, minLength - 10)
-      code2 = code2.substr(0, minLength - 10)
+      try {
+        code1 = code1.replace('0x', '')
+        code2 = code2.replace('0x', '')
+        const minLength = code1.length > code2.length ? code2.length: code1.length
+        code1 = code1.substr(0, minLength - 10)
+        code2 = code2.substr(0, minLength - 10)
+        if (code1 === '' || code2 === '') {
+          return false
+        }
+      } catch (e) {
+        console.warn('error compareByteCode', e)
+        return false
+      }
     }
     const compare = stringSimilarity.compareTwoStrings(code1, code2)
     return compare == 1

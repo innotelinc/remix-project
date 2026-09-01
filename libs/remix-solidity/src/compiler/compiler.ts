@@ -12,6 +12,14 @@ import {
   isFunctionDescription, CompilerRetriggerMode, EsWebWorkerHandlerInterface
 } from './types'
 
+function isCompilerDebugEnabled(): boolean {
+  try {
+    return globalThis.localStorage?.getItem('remix-compiler-debug') === 'true'
+  } catch {
+    return false
+  }
+}
+
 /*
   trigger compilationFinished, compilerLoaded, compilationStarted, compilationDuration
 */
@@ -24,6 +32,7 @@ export class Compiler {
     this.event = new EventManager()
     this.handleImportCall = handleImportCall
     this.state = {
+      viaIR: false,
       compileJSON: null,
       worker: null,
       currentVersion: null,
@@ -36,7 +45,7 @@ export class Compiler {
       compilationStartTime: null,
       target: null,
       useFileConfiguration: false,
-      configFileContent: '',
+      configFileContent: {},
       compilerRetriggerMode: CompilerRetriggerMode.none,
       lastCompilationResult: {
         data: null,
@@ -134,12 +143,12 @@ export class Compiler {
         let input = ""
         try {
           if (source && source.sources) {
-            const { optimize, runs, evmVersion, language, useFileConfiguration, configFileContent } = this.state
+            const { optimize, runs, evmVersion, language, useFileConfiguration, configFileContent, remappings, viaIR } = this.state
 
             if (useFileConfiguration) {
-              input = compilerInputForConfigFile(source.sources, JSON.parse(configFileContent))
+              input = compilerInputForConfigFile(source.sources, configFileContent)
             } else {
-              input = compilerInput(source.sources, { optimize, runs, evmVersion, language })
+              input = compilerInput(source.sources, { optimize, runs, evmVersion, language, remappings, viaIR })
             }
 
             result = JSON.parse(compiler.compile(input, { import: missingInputsCallback }))
@@ -213,11 +222,11 @@ export class Compiler {
           let input = ""
           try {
             if (source && source.sources) {
-              const { optimize, runs, evmVersion, language, remappings, useFileConfiguration, configFileContent } = this.state
+              const { optimize, runs, evmVersion, language, remappings, useFileConfiguration, configFileContent, viaIR } = this.state
               if (useFileConfiguration) {
-                input = compilerInputForConfigFile(source.sources, JSON.parse(configFileContent))
+                input = compilerInputForConfigFile(source.sources, configFileContent)
               } else {
-                input = compilerInput(source.sources, { optimize, runs, evmVersion, language, remappings })
+                input = compilerInput(source.sources, { optimize, runs, evmVersion, language, remappings, viaIR })
               }
 
               result = JSON.parse(remoteCompiler.compile(input, { import: missingInputsCallback }))
@@ -240,7 +249,7 @@ export class Compiler {
    */
 
   loadVersion(usingWorker: boolean, url: string): void {
-    console.log('Loading ' + url + ' ' + (usingWorker ? 'with worker' : 'without worker'))
+    if (isCompilerDebugEnabled()) console.log('Loading ' + url + ' ' + (usingWorker ? 'with worker' : 'without worker'))
     this.event.trigger('loadingCompiler', [url, usingWorker])
     if (this.state.worker) {
       this.state.worker.terminate()
@@ -330,24 +339,23 @@ export class Compiler {
 
     this.state.compileJSON = (source: SourceWithTarget, timeStamp: number) => {
       if (source && source.sources) {
-        const { optimize, runs, evmVersion, language, remappings, useFileConfiguration, configFileContent } = this.state
+        const { optimize, runs, evmVersion, language, remappings, useFileConfiguration, configFileContent, viaIR } = this.state
         jobs.push({ sources: source })
         let input = ""
 
         try {
           if (useFileConfiguration) {
-            const compilerInput = JSON.parse(configFileContent)
+            const compilerInput = configFileContent
             if (compilerInput.settings.remappings?.length) compilerInput.settings.remappings.push(...remappings)
             else compilerInput.settings.remappings = remappings
             input = compilerInputForConfigFile(source.sources, compilerInput)
           } else {
-            input = compilerInput(source.sources, { optimize, runs, evmVersion, language, remappings })
+            input = compilerInput(source.sources, { optimize, runs, evmVersion, language, remappings, viaIR })
           }
         } catch (exception) {
           this.onCompilationFinished({ error: { formattedMessage: exception.message } }, [], source, "", this.state.currentVersion)
           return
         }
-
         this.state.worker.postMessage({
           cmd: 'compile',
           job: jobs.length - 1,

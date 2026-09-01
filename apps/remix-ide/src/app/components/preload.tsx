@@ -1,16 +1,125 @@
 import { RemixApp } from '@remix-ui/app'
 import axios from 'axios'
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
+import { useTracking, TrackingProvider } from '../contexts/TrackingContext'
+import { TrackingFunction } from '../utils/TrackingFunction'
 import * as packageJson from '../../../../../package.json'
+import * as remixDesktopPackageJson from '../../../../../apps/remixdesktop/package.json'
 import { fileSystem, fileSystems } from '../files/fileSystem'
 import { indexedDBFileSystem } from '../files/filesystems/indexedDB'
 import { localStorageFS } from '../files/filesystems/localStorage'
 import { fileSystemUtility, migrationTestData } from '../files/filesystems/fileSystemUtility'
 import './styles/preload.css'
 import isElectron from 'is-electron'
-const _paq = (window._paq = window._paq || [])
+import { initEndpoints } from '@remix-endpoints-helper'
+import { isFreshBrowser, maybeRedirectFreshVisitor, setVisitFreshness } from '../utils/freshUserRedirect'
 
-export const Preload = (props: any) => {
+// _paq.push(['trackEvent', 'App', 'Preload', 'start'])
+
+interface PreloadProps {
+  root: any;
+  trackingFunction: TrackingFunction;
+}
+
+function isProbablyMobile() {
+  const userAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  const screenWidth = window.innerWidth <= 768;
+  const touchSupport = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  return userAgent || (screenWidth && touchSupport);
+}
+
+const NO_MOBILE_REDIRECT_KEY = 'remix.nomobileredirect'
+
+function isPreloadDebugEnabled(): boolean {
+  try {
+    return localStorage.getItem('remix-preload-debug') === 'true' || localStorage.getItem('remix-storage-debug') === 'true'
+  } catch {
+    return false
+  }
+}
+
+function logPreload(...args: any[]): void {
+  if (isPreloadDebugEnabled()) console.log(...args)
+}
+
+function errorPreload(...args: any[]): void {
+  if (isPreloadDebugEnabled()) console.error(...args)
+}
+
+/**
+ * Check whether the user has opted out of the mobile redirect.
+ *
+ * When the `nomobileredirect` flag is found in the URL (search or hash),
+ * persist that decision to localStorage and strip the flag from the URL so
+ * subsequent reloads stay clean. On later visits we just read the persisted
+ * value instead of relying on the URL.
+ *
+ * Returns the source of the opt-out so the caller can track it:
+ *  - 'url'      : flag came from the current URL (first time / explicit override)
+ *  - 'storage'  : flag was persisted from a previous visit
+ *  - 'none'     : no opt-out, mobile redirect should run
+ */
+function checkAndPersistNoMobileRedirect(): 'url' | 'storage' | 'none' {
+  try {
+    if (!window.location) return 'none'
+
+    const FLAG = 'nomobileredirect'
+    const search = window.location.search || ''
+    const hash = window.location.hash || ''
+    const inSearch = search.indexOf(FLAG) !== -1
+    const inHash = hash.indexOf(FLAG) !== -1
+
+    if (inSearch || inHash) {
+      try { window.localStorage.setItem(NO_MOBILE_REDIRECT_KEY, 'true') } catch (_) { /* storage may be blocked */ }
+
+      // Strip the flag from the URL without reloading the page.
+      try {
+        const stripFromQuery = (q: string) => {
+          if (!q) return q
+          const prefix = q.startsWith('?') ? '?' : ''
+          const params = new URLSearchParams(prefix ? q.slice(1) : q)
+          params.delete(FLAG)
+          const next = params.toString()
+          return next ? `${prefix}${next}` : ''
+        }
+        const stripFromHash = (h: string) => {
+          if (!h) return h
+          // Hash may contain a query-like segment ("#/path?foo=1") or just "#foo=1".
+          const hashBody = h.startsWith('#') ? h.slice(1) : h
+          const qIdx = hashBody.indexOf('?')
+          if (qIdx !== -1) {
+            const path = hashBody.slice(0, qIdx)
+            const query = stripFromQuery(hashBody.slice(qIdx))
+            return `#${path}${query}`
+          }
+          // Treat the whole hash body as an &-separated key list.
+          const parts = hashBody.split('&').filter(p => p && p !== FLAG && !p.startsWith(`${FLAG}=`))
+          return parts.length ? `#${parts.join('&')}` : ''
+        }
+
+        const newSearch = stripFromQuery(search)
+        const newHash = stripFromHash(hash)
+        if (newSearch !== search || newHash !== hash) {
+          const newUrl = window.location.pathname + newSearch + newHash
+          window.history.replaceState(null, '', newUrl)
+        }
+      } catch (_) { /* history API may not be available */ }
+
+      return 'url'
+    }
+
+    try {
+      return window.localStorage.getItem(NO_MOBILE_REDIRECT_KEY) === 'true' ? 'storage' : 'none'
+    } catch (_) {
+      return 'none'
+    }
+  } catch (_) {
+    return 'none'
+  }
+}
+
+export const Preload = (props: PreloadProps) => {
+  const { trackMatomoEvent } = useTracking()
   const [tip, setTip] = useState<string>('')
   const [supported, setSupported] = useState<boolean>(true)
   const [error, setError] = useState<boolean>(false)
@@ -18,6 +127,7 @@ export const Preload = (props: any) => {
   const remixFileSystems = useRef<fileSystems>(new fileSystems())
   const remixIndexedDB = useRef<fileSystem>(new indexedDBFileSystem())
   const localStorageFileSystem = useRef<fileSystem>(new localStorageFS())
+  const version = isElectron() ? remixDesktopPackageJson.version : packageJson.version
   // url parameters to e2e test the fallbacks and error warnings
   const testmigrationFallback = useRef<boolean>(
     window.location.hash.includes('e2e_testmigration_fallback=true') && window.location.host === '127.0.0.1:8080' && window.location.protocol === 'http:'
@@ -30,16 +140,66 @@ export const Preload = (props: any) => {
   )
 
   function loadAppComponent() {
-    import('../../app')
+    try {
+      const noMobileRedirectSource = checkAndPersistNoMobileRedirect()
+      const noMobileRedirect = noMobileRedirectSource !== 'none'
+      if (noMobileRedirect && isProbablyMobile()) {
+        // Track that the redirect was overridden so we can tell the difference
+        // between an explicit URL override ('url') and a persisted opt-out
+        // from a previous visit ('storage').
+        trackMatomoEvent?.({ category: 'App', action: 'MobileRedirectOverride', name: noMobileRedirectSource, isClick: false })
+      }
+      if (!noMobileRedirect && isProbablyMobile()) {
+        // Make sure the tracking beacon actually leaves the page before we
+        // navigate away. Matomo's trackEvent only enqueues the request on
+        // window._paq; the HTTP request would otherwise be cancelled by the
+        // immediate window.location.replace below.
+        const paq = (window as any)._paq
+        const useBeacon = Array.isArray(paq)
+        if (useBeacon) {
+          // Ensure the request survives the navigation.
+          paq.push(['alwaysUseSendBeacon'])
+        }
+        trackMatomoEvent?.({ category: 'App', action: 'MobileRedirect', name: '', isClick: false })
+
+        const doRedirect = (() => {
+          let done = false
+          return () => {
+            if (done) return
+            done = true
+            window.location.replace('https://mobile.remix.live')
+          }
+        })()
+
+        if (useBeacon) {
+          // Matomo runs functions pushed to _paq after the preceding tracking
+          // commands have been dispatched, so this fires once the beacon is on
+          // its way. We still cap the wait so a failing tracker can't block.
+          paq.push([doRedirect])
+        }
+        // Safety timeout in case the tracker never processes the queue
+        // (blocked, not loaded, opted out, etc.).
+        setTimeout(doRedirect, 600)
+        return
+      }
+    } catch (e) {
+      errorPreload('Error detecting mobile device:', e)
+    }
+
+    initEndpoints().then(() => import('../../app'))
       .then((AppComponent) => {
         const appComponent = new AppComponent.default()
         appComponent.run().then(() => {
-          props.root.render(<RemixApp app={appComponent} />)
+          props.root.render(
+            <TrackingProvider trackingFunction={props.trackingFunction}>
+              <RemixApp app={appComponent} />
+            </TrackingProvider>
+          )
         })
       })
       .catch((err) => {
-        _paq.push(['trackEvent', 'Preload', 'error', err && err.message])
-        console.error('Error loading Remix:', err)
+        trackMatomoEvent?.({ category: 'App', action: 'PreloadError', name: err && err.message, isClick: false })
+        errorPreload('Error loading Remix:', err)
         setError(true)
       })
   }
@@ -55,7 +215,7 @@ export const Preload = (props: any) => {
     setShowDownloader(false)
     const fsUtility = new fileSystemUtility()
     const migrationResult = await fsUtility.migrate(localStorageFileSystem.current, remixIndexedDB.current)
-    _paq.push(['trackEvent', 'Migrate', 'result', migrationResult ? 'success' : 'fail'])
+    trackMatomoEvent?.({ category: 'Migrate', action: 'result', name: migrationResult ? 'success' : 'fail', isClick: false })
     await setFileSystems()
   }
 
@@ -65,11 +225,11 @@ export const Preload = (props: any) => {
       testBlockStorage.current ? null : localStorageFileSystem.current
     ])
     if (fsLoaded) {
-      console.log(fsLoaded.name + ' activated')
-      _paq.push(['trackEvent', 'Storage', 'activate', fsLoaded.name])
+      logPreload(fsLoaded.name + ' activated')
+      trackMatomoEvent?.({ category: 'Storage', action: 'activate', name: fsLoaded.name, isClick: false })
       loadAppComponent()
     } else {
-      _paq.push(['trackEvent', 'Storage', 'error', 'no supported storage'])
+      trackMatomoEvent?.({ category: 'Storage', action: 'error', name: 'no supported storage', isClick: false })
       setSupported(false)
     }
   }
@@ -81,17 +241,38 @@ export const Preload = (props: any) => {
     }
   }
 
-  useEffect (() => {
-    if (isElectron()){
+  // Navigation cancels in-flight tracker requests, so ask Matomo for a beacon first.
+  const trackDomainRedirect = (toDomain: string) => {
+    try {
+      const paq = (window as any)._paq
+      if (Array.isArray(paq)) paq.push(['alwaysUseSendBeacon'])
+    } catch (_) { /* tracker not loaded */ }
+    trackMatomoEvent?.({ category: 'App', action: 'FreshUserDomainRedirect', name: toDomain, isClick: false })
+  }
+
+  useEffect(() => {
+    // Remove pre-splash as soon as React preloader mounts
+    try {
+      const splash = document.getElementById('pre-splash')
+      if (splash && splash.parentNode) splash.parentNode.removeChild(splash)
+    } catch (_) { /* noop */ }
+
+    if (isElectron()) {
       loadAppComponent()
       return
     }
     async function loadStorage() {
-      ;(await remixFileSystems.current.addFileSystem(remixIndexedDB.current)) || _paq.push(['trackEvent', 'Storage', 'error', 'indexedDB not supported'])
-      ;(await remixFileSystems.current.addFileSystem(localStorageFileSystem.current)) || _paq.push(['trackEvent', 'Storage', 'error', 'localstorage not supported'])
+      ; (await remixFileSystems.current.addFileSystem(remixIndexedDB.current)) || trackMatomoEvent?.({ category: 'Storage', action: 'error', name: 'indexedDB not supported', isClick: false })
+      ; (await remixFileSystems.current.addFileSystem(localStorageFileSystem.current)) || trackMatomoEvent?.({ category: 'Storage', action: 'error', name: 'localstorage not supported', isClick: false })
       await testmigration()
       remixIndexedDB.current.loaded && (await remixIndexedDB.current.checkWorkspaces())
       localStorageFileSystem.current.loaded && (await localStorageFileSystem.current.checkWorkspaces())
+
+      // Last moment at which "fresh" is still knowable: the IDE creates a
+      // default workspace as soon as it boots.
+      setVisitFreshness(isFreshBrowser(!!remixIndexedDB.current.hasWorkSpaces || !!localStorageFileSystem.current.hasWorkSpaces))
+      if (await maybeRedirectFreshVisitor(trackDomainRedirect)) return
+
       remixIndexedDB.current.loaded && (remixIndexedDB.current.hasWorkSpaces || !localStorageFileSystem.current.hasWorkSpaces ? await setFileSystems() : setShowDownloader(true))
       !remixIndexedDB.current.loaded && (await setFileSystems())
     }
@@ -109,8 +290,9 @@ export const Preload = (props: any) => {
     try {
       showRemixTips()
     } catch (e) {
-      console.log(e)
+      logPreload(e)
     }
+
     return () => {
       abortController.abort();
     };
@@ -118,82 +300,74 @@ export const Preload = (props: any) => {
 
   return (
     <>
-      <div className="preload-container">
-        <div className="preload-logo pb-4">
-          {logo}
-          <div className="info-secondary splash">
-            REMIX IDE
-            <br />
-            <span className="version"> v{packageJson.version}</span>
+      <div className="preload-container" >
+        <div className="preload-main">
+          <div className="preload-logo text-center">
+            <img src="assets/img/remix-logo-blue.png" alt="Remix logo" width="64" height="64" />
+            <div className="preload-title">REMIX IDE</div>
+            <div className="preload-sub"><span className="version">v{version}</span></div>
           </div>
+          {!supported ? (
+            <div className="preload-info-container alert alert-warning">
+              Your browser does not support any of the filesystems required by Remix. Either change the settings in your browser or use a supported browser.
+            </div>
+          ) : null}
+          {error ? (
+            <div className="preload-info-container alert alert-danger text-start">
+              An unknown error has occurred while loading the application.
+              <br></br>
+              Doing a hard refresh might fix this issue:<br></br>
+              <div className="pt-2">
+                Windows:<br></br>- Chrome: CTRL + F5 or CTRL + Reload Button
+                <br></br>- Firefox: CTRL + SHIFT + R or CTRL + F5<br></br>
+              </div>
+              <div className="pt-2">
+                MacOS:<br></br>- Chrome & FireFox: CMD + SHIFT + R or SHIFT + Reload Button<br></br>
+              </div>
+              <div className="pt-2">
+                Linux:<br></br>- Chrome & FireFox: CTRL + SHIFT + R<br></br>
+              </div>
+            </div>
+          ) : null}
+          {showDownloader ? (
+            <div className="preload-info-container alert alert-info">
+              This app will be updated now. Please download a backup of your files now to make sure you don't lose your work.
+              <br></br>
+              You don't need to do anything else, your files will be available when the app loads.
+              <div
+                onClick={async () => {
+                  await downloadBackup()
+                }}
+                data-id="downloadbackup-btn"
+                className="btn btn-primary mt-1"
+              >
+                download backup
+              </div>
+              <div
+                onClick={async () => {
+                  await migrateAndLoad()
+                }}
+                data-id="skipbackup-btn"
+                className="btn btn-primary mt-1"
+              >
+                skip backup
+              </div>
+            </div>
+          ) : null}
+          {supported && !error && !showDownloader ? (
+            <div className='text-center' style={{ marginTop: '16px' }}>
+              <div className="pre-splash-spinner" role="progressbar" aria-label="Loading"></div>
+            </div>
+          ) : null}
         </div>
-        {!supported ? (
-          <div className="preload-info-container alert alert-warning">
-            Your browser does not support any of the filesystems required by Remix. Either change the settings in your browser or use a supported browser.
-          </div>
-        ) : null}
-        {error ? (
-          <div className="preload-info-container alert alert-danger text-left">
-            An unknown error has occurred while loading the application.
-            <br></br>
-            Doing a hard refresh might fix this issue:<br></br>
-            <div className="pt-2">
-              Windows:<br></br>- Chrome: CTRL + F5 or CTRL + Reload Button
-              <br></br>- Firefox: CTRL + SHIFT + R or CTRL + F5<br></br>
-            </div>
-            <div className="pt-2">
-              MacOS:<br></br>- Chrome & FireFox: CMD + SHIFT + R or SHIFT + Reload Button<br></br>
-            </div>
-            <div className="pt-2">
-              Linux:<br></br>- Chrome & FireFox: CTRL + SHIFT + R<br></br>
-            </div>
-          </div>
-        ) : null}
-        {showDownloader ? (
-          <div className="preload-info-container alert alert-info">
-            This app will be updated now. Please download a backup of your files now to make sure you don't lose your work.
-            <br></br>
-            You don't need to do anything else, your files will be available when the app loads.
-            <div
-              onClick={async () => {
-                await downloadBackup()
-              }}
-              data-id="downloadbackup-btn"
-              className="btn btn-primary mt-1"
-            >
-              download backup
-            </div>
-            <div
-              onClick={async () => {
-                await migrateAndLoad()
-              }}
-              data-id="skipbackup-btn"
-              className="btn btn-primary mt-1"
-            >
-              skip backup
-            </div>
-          </div>
-        ) : null}
-        {supported && !error && !showDownloader ? (
-          <div>
-            <div className='text-center'>
-              <i className="fas fa-spinner fa-spin fa-2x"></i>
-            </div>
-            { tip && <div className='remix_tips text-center mt-3'>
-              <div><b>DID YOU KNOW</b></div>
-              <span>{tip}</span>
-            </div> }
-          </div>
-        ) : null}
+        <div className="preload-bottom opt-out">
+          { tip && <div className='remix_tips text-center mt-3'>
+            <div><b>DID YOU KNOW</b></div>
+            <span>{tip}</span>
+          </div> }
+        </div>
       </div>
     </>
   )
 }
 
-const logo = (
-  <svg id="Ebene_2" data-name="Ebene 2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 105 100">
-    <path d="M91.84,35a.09.09,0,0,1-.1-.07,41,41,0,0,0-79.48,0,.09.09,0,0,1-.1.07C9.45,35,1,35.35,1,42.53c0,8.56,1,16,6,20.32,2.16,1.85,5.81,2.3,9.27,2.22a44.4,44.4,0,0,0,6.45-.68.09.09,0,0,0,.06-.15A34.81,34.81,0,0,1,17,45c0-.1,0-.21,0-.31a35,35,0,0,1,70,0c0,.1,0,.21,0,.31a34.81,34.81,0,0,1-5.78,19.24.09.09,0,0,0,.06.15,44.4,44.4,0,0,0,6.45.68c3.46.08,7.11-.37,9.27-2.22,5-4.27,6-11.76,6-20.32C103,35.35,94.55,35,91.84,35Z" />
-    <path d="M52,74,25.4,65.13a.1.1,0,0,0-.1.17L51.93,91.93a.1.1,0,0,0,.14,0L78.7,65.3a.1.1,0,0,0-.1-.17L52,74A.06.06,0,0,1,52,74Z" />
-    <path d="M75.68,46.9,82,45a.09.09,0,0,0,.08-.09,29.91,29.91,0,0,0-.87-6.94.11.11,0,0,0-.09-.08l-6.43-.58a.1.1,0,0,1-.06-.18l4.78-4.18a.13.13,0,0,0,0-.12,30.19,30.19,0,0,0-3.65-6.07.09.09,0,0,0-.11,0l-5.91,2a.1.1,0,0,1-.12-.14L72.19,23a.11.11,0,0,0,0-.12,29.86,29.86,0,0,0-5.84-4.13.09.09,0,0,0-.11,0l-4.47,4.13a.1.1,0,0,1-.17-.07l.09-6a.1.1,0,0,0-.07-.1,30.54,30.54,0,0,0-7-1.47.1.1,0,0,0-.1.07l-2.38,5.54a.1.1,0,0,1-.18,0l-2.37-5.54a.11.11,0,0,0-.11-.06,30,30,0,0,0-7,1.48.12.12,0,0,0-.07.1l.08,6.05a.09.09,0,0,1-.16.07L37.8,18.76a.11.11,0,0,0-.12,0,29.75,29.75,0,0,0-5.83,4.13.11.11,0,0,0,0,.12l2.59,5.6a.11.11,0,0,1-.13.14l-5.9-2a.11.11,0,0,0-.12,0,30.23,30.23,0,0,0-3.62,6.08.11.11,0,0,0,0,.12l4.79,4.19a.1.1,0,0,1-.06.17L23,37.91a.1.1,0,0,0-.09.07A29.9,29.9,0,0,0,22,44.92a.1.1,0,0,0,.07.1L28.4,47a.1.1,0,0,1,0,.18l-5.84,3.26a.16.16,0,0,0,0,.11,30.17,30.17,0,0,0,2.1,6.76c.32.71.67,1.4,1,2.08a.1.1,0,0,0,.06,0L52,68.16H52l26.34-8.78a.1.1,0,0,0,.06-.05,30.48,30.48,0,0,0,3.11-8.88.1.1,0,0,0-.05-.11l-5.83-3.26A.1.1,0,0,1,75.68,46.9Z" />
-  </svg>
-)

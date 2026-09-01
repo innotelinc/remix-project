@@ -5,13 +5,16 @@ import {NightwatchBrowser} from 'nightwatch'
 
 const tests = {
   before: function (browser: NightwatchBrowser, done: VoidFunction) {
+    browser.hideToolTips()
     done()
   },
   open: function (browser: NightwatchBrowser) {
-    browser.waitForElementVisible('*[data-id="openFolderButton"]', 10000).click('*[data-id="openFolderButton"]')
+    browser.hideToolTips().waitForElementVisible('*[data-id="openFolderButton"]', 10000).click('*[data-id="openFolderButton"]')
   },
   'open xterm linux and create a file': function (browser: NightwatchBrowser) {
     browser
+      .waitForElementVisible('*[data-id="toggleBottomPanelIcon"]')
+      .click('*[data-id="toggleBottomPanelIcon"]')
       .waitForElementVisible('*[data-id="tabXTerm"]', 10000)
       .click('*[data-id="tabXTerm"]')
       .waitForElementVisible('*[data-type="remixUIXT"]', 10000)
@@ -47,7 +50,7 @@ const tests = {
     browser
       .perform(function () {
         const actions = this.actions({async: true})
-        return actions.sendKeys('git clone https://github.com/ethereum/awesome-remix').sendKeys(this.Keys.ENTER)
+        return actions.sendKeys('git clone https://github.com/remix-project-org/awesome-remix').sendKeys(this.Keys.ENTER)
       })
       .waitForElementVisible('*[data-id="treeViewLitreeViewItemawesome-remix"]', 10000)
       .click('*[data-id="treeViewLitreeViewItemawesome-remix"]')

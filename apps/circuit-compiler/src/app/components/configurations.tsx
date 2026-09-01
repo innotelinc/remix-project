@@ -1,12 +1,13 @@
 import { CustomTooltip, RenderIf } from "@remix-ui/helper"
-import { FormattedMessage } from "react-intl"
+import { FormattedMessage, useIntl } from "react-intl"
 import { ConfigurationsProps, PrimeValue } from "../types"
 
 export function Configurations ({primeValue, setPrimeValue, versionValue}: ConfigurationsProps) {
+  const intl = useIntl()
   return (
     <div className="flex-column">
       <div className="flex-column d-flex">
-        <div className="ml-0">
+        <div className="ms-0">
           <label className="circuit_inner_label form-check-label" htmlFor="circuitPrimeSelector">
             <FormattedMessage id="circuit.prime" />
           </label>
@@ -14,13 +15,13 @@ export function Configurations ({primeValue, setPrimeValue, versionValue}: Confi
             placement={"auto"}
             tooltipId="circuitPrimeLabelTooltip"
             tooltipClasses="text-nowrap"
-            tooltipText={<span>{'To choose the prime number to use to generate the circuit. Receives the name of the curve (bn128, bls12381, goldilocks, grumpkin, pallas, vesta)'}</span>}
+            tooltipText={<span>{intl.formatMessage({ id: 'circuit.primeTooltip' })}</span>}
           >
             <div>
               <select
                 onChange={(e) => setPrimeValue(e.target.value as PrimeValue)}
                 value={primeValue}
-                className="custom-select"
+                className="form-select"
                 style={{
                   pointerEvents: 'auto'
                 }}
@@ -52,7 +53,7 @@ export function Configurations ({primeValue, setPrimeValue, versionValue}: Confi
                     <option value="vesta">vesta</option>
                   </>
                 </RenderIf>
-                <RenderIf condition={versionValue === '2.1.8'}>
+                <RenderIf condition={versionValue === '2.1.8' || versionValue === 'latest'}>
                   <>
                     <option value="bn128">bn128</option>
                     <option value="bls12381">bls12381</option>

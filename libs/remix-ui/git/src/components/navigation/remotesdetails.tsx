@@ -8,6 +8,7 @@ import { gitMatomoEventTypes } from "../../types";
 import GitUIButton from "../buttons/gituibutton";
 import { gitPluginContext } from "../gitui";
 import { removeGitFromUrl } from "../../utils";
+import { useIntl } from "react-intl";
 
 interface RemotesDetailsNavigationProps {
   eventKey: string;
@@ -20,6 +21,7 @@ export const RemotesDetailsNavigation = (props: RemotesDetailsNavigationProps) =
   const { eventKey, activePanel, callback, remote } = props;
   const context = React.useContext(gitPluginContext)
   const actions = React.useContext(gitActionsContext)
+  const intl = useIntl()
 
   const handleClick = () => {
     if (!callback) return
@@ -50,7 +52,7 @@ export const RemotesDetailsNavigation = (props: RemotesDetailsNavigationProps) =
             activePanel === eventKey ? <FontAwesomeIcon className='' icon={faCaretDown}></FontAwesomeIcon> : <FontAwesomeIcon className='' icon={faCaretRight}></FontAwesomeIcon>
           }
           <CustomTooltip tooltipText={remote.url} placement="top">
-            <div className={`long-and-truncated ml-1 ${isDefault() ? 'text-success' : ''}`}>
+            <div className={`long-and-truncated ms-1 ${isDefault() ? 'text-success' : ''}`}>
               {remote.name}  <FontAwesomeIcon className='' icon={faArrowRightArrowLeft}></FontAwesomeIcon> {remote.url}
             </div>
           </CustomTooltip>
@@ -59,15 +61,15 @@ export const RemotesDetailsNavigation = (props: RemotesDetailsNavigationProps) =
         {isDefault() ?
           <GitUIButton data-id={`default-remote-check-${remote.name}`}className="btn btn-sm" onClick={() => { }} disabledCondition={true}><FontAwesomeIcon className='text-success' icon={faCheck} ></FontAwesomeIcon></GitUIButton>
           :
-          <GitUIButton data-id={`set-as-default-${remote.name}`} tooltip="set as default" className="btn btn-sm" onClick={setAsDefault}><FontAwesomeIcon icon={faToggleOn}></FontAwesomeIcon></GitUIButton>
+          <GitUIButton data-id={`set-as-default-${remote.name}`} tooltip={intl.formatMessage({ id: 'gitui.setAsDefault' })} className="btn btn-sm" onClick={setAsDefault}><FontAwesomeIcon icon={faToggleOn}></FontAwesomeIcon></GitUIButton>
         }
-        <GitUIButton tooltip="Fetch remote" data-id={`remote-sync-${remote.name}`} className="btn btn-sm" onClick={async () => {
+        <GitUIButton tooltip={intl.formatMessage({ id: 'gitui.fetchRemote' })} data-id={`remote-sync-${remote.name}`} className="btn btn-sm" onClick={async () => {
           await actions.fetch({
             remote
           })
         }}><FontAwesomeIcon icon={faSync} ></FontAwesomeIcon></GitUIButton>
         <GitUIButton data-id={`remote-rm-${remote.name}`} className="btn btn-sm" onClick={() => actions.removeRemote(remote)}><FontAwesomeIcon className='text-danger' icon={faTrash} ></FontAwesomeIcon></GitUIButton>
-        {remote?.url && <GitUIButton tooltip="open on remote" className="btn btn-sm pr-0" onClick={() => openRemote()}><FontAwesomeIcon icon={faGlobe} ></FontAwesomeIcon></GitUIButton>}
+        {remote?.url && <GitUIButton tooltip={intl.formatMessage({ id: 'gitui.openOnRemote' })} className="btn btn-sm pe-0" onClick={() => openRemote()}><FontAwesomeIcon icon={faGlobe} ></FontAwesomeIcon></GitUIButton>}
       </div>
     </>
   );

@@ -3,12 +3,8 @@ import React, { useEffect, useState, useContext } from 'react'
 import { FormattedMessage } from 'react-intl'
 import { ThemeContext } from '../themeContext'
 import { CustomTooltip } from '@remix-ui/helper'
-declare global {
-  interface Window {
-    _paq: any
-  }
-}
-const _paq = (window._paq = window._paq || []) //eslint-disable-line
+import { HomeTabEvent, MatomoEvent } from '@remix-api'
+import { TrackingContext } from '@remix-ide/tracking'
 
 enum VisibleTutorial {
   Basics,
@@ -27,12 +23,23 @@ function HomeTabLearn({ plugin }: HomeTabLearnProps) {
   })
 
   const themeFilter = useContext(ThemeContext)
+  const { trackMatomoEvent: baseTrackEvent } = useContext(TrackingContext)
+
+  // Component-specific tracker with default HomeTabEvent type
+  const trackMatomoEvent = <T extends MatomoEvent = HomeTabEvent>(event: T) => {
+    baseTrackEvent?.<T>(event)
+  }
 
   const startLearnEthTutorial = async (tutorial: 'basics' | 'soliditybeginner' | 'deploylibraries') => {
     await plugin.appManager.activatePlugin(['solidity', 'LearnEth', 'solidityUnitTesting'])
     plugin.verticalIcons.select('LearnEth')
-    plugin.call('LearnEth', 'startTutorial', 'ethereum/remix-workshops', 'master', tutorial)
-    _paq.push(['trackEvent', 'hometab', 'startLearnEthTutorial', tutorial])
+    plugin.call('LearnEth', 'startTutorial', 'remix-project-org/remix-workshops', 'master', tutorial)
+    trackMatomoEvent({
+      category: 'hometab',
+      action: 'startLearnEthTutorial',
+      name: tutorial,
+      isClick: true
+    })
   }
 
   const goToLearnEthHome = async () => {
@@ -57,7 +64,7 @@ function HomeTabLearn({ plugin }: HomeTabLearnProps) {
           tooltipId="overlay-tooltip"
           tooltipClasses="text-nowrap"
           tooltipText={<FormattedMessage id="home.seeAllTutorials" />}
-          tooltipTextClasses="border bg-light text-dark p-1 pr-3"
+          tooltipTextClasses="border bg-light text-dark p-1 pe-3"
         >
           <button
             onClick={async () => {
@@ -87,11 +94,11 @@ function HomeTabLearn({ plugin }: HomeTabLearnProps) {
             })
           }
         >
-          <label className="card-title align-self-start m-0 float-left" style={{ fontSize: '1rem' }}>
+          <label className="card-title align-self-start m-0 float-start" style={{ fontSize: '1rem' }}>
             <FormattedMessage id="home.learnEth1" />
           </label>
           {state.visibleTutorial === VisibleTutorial.Basics && (
-            <div className="pt-2 d-flex flex-column text-left">
+            <div className="pt-2 d-flex flex-column text-start">
               <span className="py-1" style={{ fontSize: '0.8rem' }}>
                 <FormattedMessage id="home.learnEth1Desc" />
               </span>
@@ -112,11 +119,11 @@ function HomeTabLearn({ plugin }: HomeTabLearnProps) {
             })
           }
         >
-          <label className="card-title align-self-start m-0 float-left" style={{ fontSize: '1rem' }}>
+          <label className="card-title align-self-start m-0 float-start" style={{ fontSize: '1rem' }}>
             <FormattedMessage id="home.learnEth2" />
           </label>
           {state.visibleTutorial === VisibleTutorial.Intermediate && (
-            <div className="pt-2 d-flex flex-column text-left">
+            <div className="pt-2 d-flex flex-column text-start">
               <span className="py-1" style={{ fontSize: '0.8rem' }}>
                 <FormattedMessage id="home.learnEth2Desc" />
               </span>
@@ -134,11 +141,11 @@ function HomeTabLearn({ plugin }: HomeTabLearnProps) {
             })
           }
         >
-          <label className="card-title align-self-start m-0 float-left" style={{ fontSize: '1rem' }}>
+          <label className="card-title align-self-start m-0 float-start" style={{ fontSize: '1rem' }}>
             <FormattedMessage id="home.remixAdvanced" />
           </label>
           {state.visibleTutorial === VisibleTutorial.Advanced && (
-            <div className="pt-2 d-flex flex-column text-left">
+            <div className="pt-2 d-flex flex-column text-start">
               <span className="py-1" style={{ fontSize: '0.8rem' }}>
                 <FormattedMessage id="home.remixAdvancedDesc" />
               </span>

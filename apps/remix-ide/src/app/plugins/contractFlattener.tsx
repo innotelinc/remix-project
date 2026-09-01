@@ -1,11 +1,12 @@
 /* eslint-disable prefer-const */
 import React from 'react'
+import { ViewPlugin } from '@remixproject/engine-web'
+import { PluginViewWrapper } from '@remix-ui/helper'
+import { trackMatomoEvent } from '@remix-api'
+import type { CompilerInput, CompilationSource } from '@remix-project/remix-solidity'
 import { Plugin } from '@remixproject/engine'
 import { customAction } from '@remixproject/plugin-api'
 import { concatSourceFiles, getDependencyGraph, normalizeContractPath } from '@remix-ui/solidity-compiler'
-import type { CompilerInput, CompilationSource } from '@remix-project/remix-solidity'
-
-const _paq = (window._paq = window._paq || [])
 
 const profile = {
   name: 'contractflattener',
@@ -31,7 +32,7 @@ export class ContractFlattener extends Plugin {
         }
       }
     })
-    _paq.push(['trackEvent', 'plugin', 'activated', 'contractFlattener'])
+    trackMatomoEvent(this, { category: 'plugin', action: 'activated', name: 'contractFlattener', isClick: false })
   }
 
   onDeactivation(): void {
@@ -49,7 +50,8 @@ export class ContractFlattener extends Plugin {
    * Takes the flattened result, writes it to a file and returns the result.
    * @returns {Promise<string>}
    */
-  async flattenContract(source: {sources: any; target: string}, filePath: string, data: {contracts: any; sources: any}, input: CompilerInput): Promise<string> {
+  async flattenContract(source: {sources: any; target: string}, filePath: string, data: {contracts: any; sources: any}, input: CompilerInput, write?: boolean): Promise<string> {
+    if (write === undefined || write === null) write = true
     const appendage = '_flattened.sol'
     const normalized = normalizeContractPath(filePath)
     const path = `${normalized[normalized.length - 2]}${appendage}`
@@ -67,8 +69,10 @@ export class ContractFlattener extends Plugin {
     } catch (err) {
       console.warn(err)
     }
-    await this.call('fileManager', 'writeFile', path, result)
-    _paq.push(['trackEvent', 'plugin', 'contractFlattener', 'flattenAContract'])
+    if (write) {
+      await this.call('fileManager', 'writeFile', path, result)
+    }
+    trackMatomoEvent(this, { category: 'plugin', action: 'contractFlattener', name: 'flattenAContract', isClick: false })
     // clean up memory references & return result
     sorted = null
     sources = null

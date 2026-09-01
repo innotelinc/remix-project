@@ -45,13 +45,14 @@ export class compilerLoaderPlugin extends Plugin {
     response.baseURLWasm = baseURLWasm
 
     this.emit('jsonBinDataLoaded', response)
+    return response
   }
 }
 
 export class compilerLoaderPluginDesktop extends ElectronPlugin {
   constructor() {
     super(profile)
-    this.methods = []
+    this.methods = methods
   }
 
   async onActivation(): Promise<void> {

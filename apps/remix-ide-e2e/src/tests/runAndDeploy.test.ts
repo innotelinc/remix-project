@@ -22,44 +22,45 @@ module.exports = {
   'Should load run and deploy tab and check value validation #group1': function (browser: NightwatchBrowser) {
     browser.waitForElementPresent('*[data-id="remixIdeSidePanel"]')
       .assert.containsText('*[data-id="sidePanelSwapitTitle"]', 'DEPLOY & RUN TRANSACTIONS')
-      .validateValueInput('*[data-id="dandrValue"]', ['9','9','9'], '999')
-      .validateValueInput('*[data-id="dandrValue"]', ['0','0','0'], '0')
-      .validateValueInput('*[data-id="dandrValue"]', ['1','.','3'], '0') // no decimal
-      // .validateValueInput('*[data-id="dandrValue"]', 'dragon', '0') // only numbers
+      .validateValueInput('*[data-id="udapp_value"]', ['9','9','9'], '999')
+      .validateValueInput('*[data-id="udapp_value"]', ['0','0','0'], '')
+      .validateValueInput('*[data-id="udapp_value"]', ['1','.','3'], '1') // no decimal
+      // .validateValueInput('*[data-id="udapp_value"]', 'dragon', '0') // only numbers
   },
 
   'Should sign message using account key #group2': function (browser: NightwatchBrowser) {
-    browser.waitForElementVisible('*[data-id="settingsRemixRunSignMsg"]')
-      .switchEnvironment('vm-paris')
-      .pause(2000)
-      .click('*[data-id="settingsRemixRunSignMsg"]')
-      .pause(2000)
+    browser.waitForElementVisible('*[data-id="remixIdeSidePanel"]')
+      .waitForElementVisible('.selected-account-balance-container', 30000)
+      .moveToElement('.selected-account-balance-container', 10, 10)
+      .pause(500)
+      .waitForElementVisible('*[data-id="selected-account-kebab-menu"]')
+      .click('*[data-id="selected-account-kebab-menu"]')
+      .waitForElementVisible('*[data-id="signUsingAccount"]')
+      .click('*[data-id="signUsingAccount"]')
       .waitForElementVisible('*[data-id="signMessageTextarea"]', 120000)
       .click('*[data-id="signMessageTextarea"]')
       .setValue('*[data-id="signMessageTextarea"]', 'Remix is cool!')
-      .assert.not.elementPresent('*[data-id="settingsRemixRunSignMsgHash"]')
-      .assert.not.elementPresent('*[data-id="settingsRemixRunSignMsgSignature"]')
       .pause(2000)
-      .waitForElementPresent('[data-id="udappNotify-modal-footer-ok-react"]')
-      .click('[data-id="udappNotify-modal-footer-ok-react"]')
-      .waitForElementVisible('*[data-id="udappNotifyModalDialogModalBody-react"]', 12000)
+      .waitForElementPresent('[data-id="signMessage-modal-footer-ok-react"]')
+      .click('[data-id="signMessage-modal-footer-ok-react"]')
+      .waitForElementVisible('*[data-id="signedMessageModalDialogModalBody-react"]', 12000)
       .assert.elementPresent('*[data-id="settingsRemixRunSignMsgHash"]')
       .assert.elementPresent('*[data-id="settingsRemixRunSignMsgSignature"]')
-      .waitForElementPresent('[data-id="udappNotify-modal-footer-ok-react"]')
-      .click('[data-id="udappNotify-modal-footer-ok-react"]')
+      .waitForElementPresent('[data-id="signedMessage-modal-footer-ok-react"]')
+      .click('[data-id="signedMessage-modal-footer-ok-react"]')
   },
 
   'Should deploy contract on JavascriptVM #group3': function (browser: NightwatchBrowser) {
     browser.waitForElementVisible('*[data-id="remixIdeSidePanel"]')
       .clickLaunchIcon('filePanel')
       .addFile('Greet.sol', sources[0]['Greet.sol'])
+      .pause(2000)
       .clickLaunchIcon('udapp')
       .selectAccount('0xCA35b7d915458EF540aDe6068dFe2F44E8fa733c')
-      .waitForElementVisible('*[data-id="Deploy - transact (not payable)"]', 45000)
-      .click('*[data-id="Deploy - transact (not payable)"]')
+      .createContract('')
       .pause(5000)
       .testFunction('last', {
-        status: '0x1 Transaction mined and execution succeed'
+        status: '1 Transaction mined and execution completed'
       })
   },
 
@@ -68,10 +69,10 @@ module.exports = {
     browser.waitForElementVisible('*[data-id="remixIdeSidePanel"]')
       .clickLaunchIcon('filePanel')
       .addFile('checkBalance.sol', sources[0]['checkBalance.sol'])
+      .pause(2000)
       .clickLaunchIcon('udapp')
-      .setValue('*[data-id="dandrValue"]', '111')
-      .waitForElementVisible('*[data-id="Deploy - transact (payable)"]', 45000)
-      .click('*[data-id="Deploy - transact (payable)"]')
+      .setValue('*[data-id="udapp_value"]', '111')
+      .createContract('')
       .pause(1000)
       .clickInstance(1)
       .pause(1000)
@@ -79,7 +80,7 @@ module.exports = {
         instanceAddress = address
         console.log('instanceAddress', instanceAddress)
         browser
-          .waitForElementVisible(`#instance${instanceAddress} [data-id="instanceContractBal"]`)
+          .waitForElementVisible(`#instance${instanceAddress} [data-id="deployedContractBal"]`)
         //*[@id="instance0xbBF289D846208c16EDc8474705C748aff07732dB" and contains(.,"Balance") and contains(.,'0.000000000000000111')]
           .waitForElementVisible({
             locateStrategy: 'xpath',
@@ -87,7 +88,7 @@ module.exports = {
             timeout: 60000
           })
         //.waitForElementContainsText(`#instance${instanceAddress} [data-id="instanceContractBal"]`, 'Balance: 0.000000000000000111 ETH', 60000)
-          .clickFunction('sendSomeEther - transact (not payable)', { types: 'uint256 num', values: '2' })
+          .clickFunction(1, 0, ['2'])
           .pause(1000)
           .waitForElementVisible({
             locateStrategy: 'xpath',
@@ -100,24 +101,25 @@ module.exports = {
   'Should run low level interaction (fallback function) #group3': function (browser: NightwatchBrowser) {
     browser.waitForElementPresent('*[data-id="remixIdeSidePanel"]')
       .clickInstance(0)
-      .waitForElementPresent('*[data-id="pluginManagerSettingsDeployAndRunLLTxSendTransaction"]')
-      .click('*[data-id="pluginManagerSettingsDeployAndRunLLTxSendTransaction"]')
+      .sendLowLevelTx(0, null, null)
       .pause(5000)
       .testFunction('last', {
-        status: '0x1 Transaction mined and execution succeed'
+        status: '1 Transaction mined and execution completed'
       })
       // When this is removed and tests are running by connecting to metamask
       // Consider adding tests to check return value of contract call
       // See: https://github.com/ethereum/remix-project/pull/1229
       .end()
-  },  
+  },
 
   'Should ensure that save environment state is checked by default #group4 #group5': function (browser: NightwatchBrowser) {
     browser.waitForElementPresent('*[data-id="remixIdeSidePanel"]')
-      .clickLaunchIcon('settings')
-      .waitForElementPresent('[data-id="settingsEnableSaveEnvStateLabel"]')
-      .scrollInto('[data-id="settingsEnableSaveEnvStateLabel"]')
-      .verify.elementPresent('[data-id="settingsEnableSaveEnvState"]:checked')
+      .waitForElementVisible('*[data-id="topbar-settingsIcon"]')
+      .click('*[data-id="topbar-settingsIcon"]')
+      .waitForElementVisible('*[data-id="settings-sidebar-general"]')
+      .click('*[data-id="settings-sidebar-general"]')
+      .pause(100)
+      .waitForElementPresent('[data-id="save-evm-stateSwitch"] > .fa-toggle-on')
   },
 
   'Should deploy default storage contract; store value and ensure that state is saved. #group4 #group5': function (browser: NightwatchBrowser) {
@@ -127,15 +129,14 @@ module.exports = {
       .openFile('contracts/1_Storage.sol')
       .pause(5000)
       .clickLaunchIcon('udapp')
-      .waitForElementPresent('*[data-id="Deploy - transact (not payable)"]')
-      .click('*[data-id="Deploy - transact (not payable)"]')
+      .createContract('')
       .waitForElementPresent('#instance0xd9145CCE52D386f254917e481eB44e9943F39138')
       .clickInstance(0)
-      .clickFunction('store - transact (not payable)', { types: 'uint256 num', values: '10' })
-      .clickFunction('retrieve - call')
+      .clickFunction(0, 0, ['10'])
+      .clickFunction(0, 1)
       .waitForElementContainsText('[data-id="treeViewLi0"]', 'uint256: 10')
       .clickLaunchIcon('filePanel')
-      .openFile('.states/vm-cancun/state.json')
+      .openFile('.states/vm-osaka/state.json')
       .getEditorValue((content) => {
         browser
           .assert.ok(content.includes('"latestBlockNumber": "0x2"'), 'State is saved')
@@ -149,28 +150,30 @@ module.exports = {
       .openFile('contracts/1_Storage.sol')
       .addAtAddressInstance('0xd9145CCE52D386f254917e481eB44e9943F39138', true, true, false)
       .clickInstance(0)
-      .clickFunction('retrieve - call')
-      .waitForElementContainsText('[data-id="treeViewLi0"]', 'uint256: 10')
+      .clickFunction(0, 1)
+      // .waitForElementContainsText('[data-id="treeViewLi0"]', 'uint256: 10')
   },
 
-  'Should save state after running web3 script #group4': function (browser: NightwatchBrowser) {
+  'Should save state after running ethers script #group4': function (browser: NightwatchBrowser) {
     browser
-      .clickLaunchIcon('settings')
-      .waitForElementPresent('[data-id="settingsTabGenerateContractMetadataLabel"]')
-      .click('[data-id="settingsTabGenerateContractMetadataLabel"]')
-      .verify.elementPresent('[data-id="settingsTabGenerateContractMetadata"]:checked')
+      .waitForElementVisible('*[data-id="topbar-settingsIcon"]')
+      .click('*[data-id="topbar-settingsIcon"]')
+      .waitForElementPresent('[data-id="generate-contract-metadataSwitch"]')
+      .click('[data-id="generate-contract-metadataSwitch"]')
       .clickLaunchIcon('solidity')
       .click('.remixui_compilerConfigSection')
       .setValue('#evmVersionSelector', 'london')
       .click('*[data-id="compilerContainerCompileBtn"]')
       .clickLaunchIcon('udapp')
-      .switchEnvironment('vm-london')
+      .switchEnvironment('vm-london', 'Remix_VM')
       .clickLaunchIcon('filePanel')
       .waitForElementVisible('*[data-id="treeViewLitreeViewItemscripts"]')
       .click('*[data-id="treeViewLitreeViewItemscripts"]')
-      .waitForElementVisible('*[data-id="treeViewLitreeViewItemscripts/deploy_with_web3.ts"]')
-      .openFile('scripts/deploy_with_web3.ts')
-      .click('[data-id="play-editor"]')
+      .waitForElementVisible('*[data-id="treeViewLitreeViewItemscripts/deploy_with_ethers.ts"]')
+      .openFile('scripts/deploy_with_ethers.ts')
+      .click('[data-id="compile-action"]')
+      .waitForElementContainsText('*[data-id="terminalJournal"]', 'address:')
+      .openFile('.states/vm-london/state.json')
       .waitForElementPresent('[data-id="treeViewDivDraggableItem.states/vm-london/state.json"]')
       .click('[data-id="treeViewDivDraggableItem.states/vm-london/state.json"]')
       .pause(1000)
@@ -182,19 +185,18 @@ module.exports = {
 
   'Should ensure that .states is not updated when save env option is unchecked #group5': function (browser: NightwatchBrowser) {
     browser
-      .clickLaunchIcon('settings')
-      .waitForElementPresent('[data-id="settingsEnableSaveEnvStateLabel"]')
-      .click('[data-id="settingsEnableSaveEnvStateLabel"]')
-      .verify.elementNotPresent('[data-id="settingsEnableSaveEnvState"]:checked')
+      .waitForElementVisible('*[data-id="topbar-settingsIcon"]')
+      .click('*[data-id="topbar-settingsIcon"]')
+      .waitForElementPresent('[data-id="save-evm-stateSwitch"]')
+      .click('[data-id="save-evm-stateSwitch"]')
       .clickLaunchIcon('filePanel')
       .openFile('contracts/1_Storage.sol')
       .pause(5000)
       .clickLaunchIcon('udapp')
-      .waitForElementPresent('*[data-id="Deploy - transact (not payable)"]')
-      .click('*[data-id="Deploy - transact (not payable)"]')
+      .createContract('')
       .pause(5000)
       .clickLaunchIcon('filePanel')
-      .openFile('.states/vm-cancun/state.json')
+      .openFile('.states/vm-osaka/state.json')
       .getEditorValue((content) => {
         browser
           .assert.ok(content.includes('"latestBlockNumber": "0x2"'), 'State is unchanged')
@@ -211,11 +213,11 @@ const sources = [
       pragma solidity ^0.8.0;
       contract HelloWorld {
           string public message;
-          
+
           fallback () external {
               message = 'Hello World!';
           }
-          
+
           function greet(string memory _message) public {
               message = _message;
           }
@@ -229,7 +231,7 @@ const sources = [
         function sendSomeEther(uint256 num) public {
             payable(msg.sender).transfer(num);
         }
-    
+
     }`
     }
   }

@@ -6,6 +6,7 @@ import { FileSystemProvider } from '@remix-ui/workspace' // eslint-disable-line
 import {Registry} from '@remix-project/remix-lib'
 import { RemixdHandle } from '../plugins/remixd-handle'
 import {PluginViewWrapper} from '@remix-ui/helper'
+import isElectron from 'is-electron'
 const { TruffleHandle } = require('../files/truffle-handle.js')
 
 /*
@@ -31,10 +32,12 @@ const profile = {
   methods: [
     'createNewFile',
     'uploadFile',
+    'uploadFolder',
     'echoCall',
     'getCurrentWorkspace',
     'getAvailableWorkspaceName',
     'getWorkspaces',
+    'getWorkspacesForPlugin',
     'createWorkspace',
     'switchToWorkspace',
     'setWorkspace',
@@ -44,7 +47,10 @@ const profile = {
     'loadTemplate',
     'clone',
     'isExpanded',
-    'isGist'
+    'isGist',
+    'workspaceExists',
+    'readFileFromWorkspace',
+    'existsInWorkspace'
   ],
   events: ['setWorkspace', 'workspaceRenamed', 'workspaceDeleted', 'workspaceCreated'],
   icon: 'assets/img/fileManager.webp',
@@ -55,9 +61,10 @@ const profile = {
   version: packageJson.version,
   maintainedBy: 'Remix'
 }
-module.exports = class Filepanel extends ViewPlugin {
+export default class Filepanel extends ViewPlugin {
   constructor(appManager, contentImport) {
     super(profile)
+    this.debug = false
     this.registry = Registry.getInstance()
     this.fileProviders = this.registry.get('fileproviders').api
     this.fileManager = this.registry.get('filemanager').api
@@ -73,6 +80,22 @@ module.exports = class Filepanel extends ViewPlugin {
     this.currentWorkspaceMetadata = null
 
     this.expandPath = []
+  }
+
+  warn(...args) {
+    if (this.isDebugEnabled()) console.warn(...args)
+  }
+
+  isDebugEnabled() {
+    try {
+      return this.debug || localStorage.getItem('remix-file-panel-debug') === 'true'
+    } catch (_) {
+      return this.debug
+    }
+  }
+
+  log(...args) {
+    if (this.isDebugEnabled()) console.log(...args)
   }
 
   setDispatch(dispatch) {
@@ -150,6 +173,82 @@ module.exports = class Filepanel extends ViewPlugin {
     return this.workspaces
   }
 
+  /**
+   * Returns a clean, serializable copy of workspaces for external plugins.
+   * This is necessary because plugin communication uses postMessage which requires cloneable data.
+   * Use this method instead of getWorkspaces() when calling from external plugins.
+   */
+  getWorkspacesForPlugin() {
+    if (!this.workspaces) return []
+    return this.workspaces
+      .filter(ws => ws && ws.name && ws.name !== 'null' && ws.name !== null && ws.name !== undefined)
+      .map(ws => ({
+        name: ws.name,
+        isGitRepo: ws.isGitRepo || false,
+        hasGitSubmodules: ws.hasGitSubmodules || false,
+        isGist: typeof ws.isGist === 'string' ? ws.isGist : null,
+        remoteId: ws.remoteId || null
+      }))
+  }
+
+  workspaceExists(name) {
+    if (!this.workspaces) return false
+    const found = this.workspaces.find((workspace) => workspace.name === name)
+    return !!found
+  }
+
+  async readFileFromWorkspace(workspaceName, filePath) {
+    try {
+      // Handle electron filesystem - use fileManager directly which routes to the electron provider
+      if (isElectron()) {
+        const content = await this.call('fileManager', 'readFile', filePath)
+        return content
+      }
+
+      if (!window.remixFileSystem) {
+        throw new Error('File system not ready')
+      }
+      const workspaceProvider = this.fileProviders.workspace
+      if (!workspaceProvider || !workspaceProvider.workspacesPath) {
+        throw new Error('Workspace provider not ready')
+      }
+      // Cloud mode: resolve display name to UUID for the path
+      const dirName = workspaceProvider.getWorkspaceDirName?.(workspaceName) || workspaceName
+      const fullPath = `${workspaceProvider.workspacesPath}/${dirName}/${filePath}`.replace(/\/\//g, '/')
+      const exists = await window.remixFileSystem.exists(fullPath)
+      if (!exists) throw new Error(`File not found: ${filePath} in workspace ${workspaceName}`)
+      const content = await window.remixFileSystem.readFile(fullPath, 'utf8')
+      return content
+    } catch (e) {
+      this.warn('[FilePanel] readFileFromWorkspace error:', e.message)
+      throw e
+    }
+  }
+
+  async existsInWorkspace(workspaceName, filePath) {
+    try {
+      // Handle electron filesystem - use fileManager directly which routes to the electron provider
+      if (isElectron()) {
+        return await this.call('fileManager', 'exists', filePath)
+      }
+
+      if (!window.remixFileSystem) {
+        return false
+      }
+      const workspaceProvider = this.fileProviders.workspace
+      if (!workspaceProvider || !workspaceProvider.workspacesPath) {
+        return false
+      }
+      // Cloud mode: resolve display name to UUID for the path
+      const dirName = workspaceProvider.getWorkspaceDirName?.(workspaceName) || workspaceName
+      const fullPath = `${workspaceProvider.workspacesPath}/${dirName}/${filePath}`.replace(/\/\//g, '/')
+      return await window.remixFileSystem.exists(fullPath)
+    } catch (e) {
+      this.warn('[FilePanel] existsInWorkspace error:', e.message)
+      return false
+    }
+  }
+
   getAvailableWorkspaceName(name) {
     if (!this.workspaces) return name
     let index = 1
@@ -177,6 +276,15 @@ module.exports = class Filepanel extends ViewPlugin {
   uploadFile(target) {
     return new Promise((resolve, reject) => {
       return this.emit('uploadFileReducerEvent', '/', target, (err, data) => {
+        if (err) reject(err)
+        else resolve(data)
+      })
+    })
+  }
+
+  uploadFolder(target) {
+    return new Promise((resolve, reject) => {
+      this.emit('uploadFolderReducerEvent', '/', target, (err, data) => {
         if (err) reject(err)
         else resolve(data)
       })
@@ -211,17 +319,17 @@ module.exports = class Filepanel extends ViewPlugin {
   }
 
   saveRecent(workspaceName) {
-    if (workspaceName === 'code-sample') return
+    if (typeof workspaceName !== 'string') return
+    // Don't save temporary code-sample workspaces to recent list
+    if (/^code-sample(-[a-z0-9]{8})?$/.test(workspaceName)) return
     if (!localStorage.getItem('recentWorkspaces')) {
-      localStorage.setItem('recentWorkspaces', JSON.stringify([ workspaceName ]))
+      localStorage.setItem('recentWorkspaces', JSON.stringify([ { name: workspaceName, timestamp: Date.now() } ]))
     } else {
       let recents = JSON.parse(localStorage.getItem('recentWorkspaces'))
       // checking if we have a duplication
-      if (!recents.find((el) => {
-        return el === workspaceName
-      })) {
-        recents = ([workspaceName, ...recents])
-        recents = recents.filter((el) => { return el != "" })
+      if (!recents.find((el) => (el || {}).name ? el.name === workspaceName : el === workspaceName)) {
+        recents = ([{ name: workspaceName, timestamp: Date.now() }, ...recents])
+        recents = recents.filter((el) => (el || {}).name ? el.name !== '' : el !== '')
         localStorage.setItem('recentWorkspaces', JSON.stringify(recents))
       }
     }
@@ -230,10 +338,12 @@ module.exports = class Filepanel extends ViewPlugin {
   setWorkspace(workspace) {
     const workspaceProvider = this.fileProviders.workspace
     const current = this.currentWorkspaceMetadata
+    // Cloud mode: resolve display name → UUID for the actual directory path
+    const dirName = workspaceProvider.getWorkspaceDirName?.(workspace.name) || workspace.name
     this.currentWorkspaceMetadata = {
       name: workspace.name,
       isLocalhost: workspace.isLocalhost,
-      absolutePath: `${workspaceProvider.workspacesPath}/${workspace.name}`,
+      absolutePath: `${workspaceProvider.workspacesPath}/${dirName}`,
     }
     if (this.currentWorkspaceMetadata.name !== current) {
       this.saveRecent(workspace.name)
@@ -241,6 +351,7 @@ module.exports = class Filepanel extends ViewPlugin {
     if (workspace.name !== ' - connect to localhost - ') {
       localStorage.setItem('currentWorkspace', workspace.name)
     }
+    this.log('setting workspace', workspace)
     this.emit('setWorkspace', workspace)
   }
 

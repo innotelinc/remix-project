@@ -1,0 +1,54 @@
+{
+  "name": "remix-ai-core",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/remix-ai-core/src",
+  "projectType": "library",
+  "implicitDependencies": [],
+  "targets": {
+    "build": {
+      "executor": "@nrwl/js:tsc",
+      "outputs": [
+        "{options.outputPath}"
+      ],
+      "options": {
+        "outputPath": "dist/libs/remix-ai-core",
+        "main": "libs/remix-ai-core/src/index.ts",
+        "tsConfig": "libs/remix-ai-core/tsconfig.lib.json",
+        "updateBuildableProjectDepsInPackageJson": false,
+        "assets": [
+          "libs/remix-ai-core/*.md"
+        ]
+      }
+    },
+    "lint": {
+      "executor": "@nrwl/linter:eslint",
+      "outputs": [
+        "{options.outputFile}"
+      ],
+      "options": {
+        "lintFilePatterns": [
+          "libs/remix-ai-core/**/*.ts"
+        ],
+        "eslintConfig": "libs/remix-ai-core/.eslintrc"
+      }
+    },
+    "test": {
+      "executor": "@nrwl/workspace:run-commands",
+      "options": {
+        "commands": [
+          "TS_NODE_PROJECT=tsconfig.base.json npx ts-node -T --compiler-options '{\"module\":\"commonjs\",\"moduleResolution\":\"node\",\"esModuleInterop\":true,\"target\":\"es2020\",\"jsx\":\"react\"}' -r tsconfig-paths/register libs/remix-ai-core/test/{args.file}"
+        ],
+        "parallel": false,
+        "cwd": "."
+      },
+      "configurations": {
+        "all": {
+          "commands": [
+            "for f in libs/remix-ai-core/test/*.test.ts; do TS_NODE_PROJECT=tsconfig.base.json npx ts-node -T --compiler-options '{\"module\":\"commonjs\",\"moduleResolution\":\"node\",\"esModuleInterop\":true,\"target\":\"es2020\",\"jsx\":\"react\"}' -r tsconfig-paths/register \"$f\" || exit 1; done"
+          ]
+        }
+      }
+    }
+  },
+  "tags": []
+}

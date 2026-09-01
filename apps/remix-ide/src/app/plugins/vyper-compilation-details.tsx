@@ -1,11 +1,12 @@
 import React from 'react'
 import { ViewPlugin } from '@remixproject/engine-web'
 import { PluginViewWrapper } from '@remix-ui/helper'
+import { trackMatomoEvent } from '@remix-api'
 import { RemixAppManager } from '../../remixAppManager'
 import { RemixUiVyperCompileDetails } from '@remix-ui/vyper-compile-details'
 import { ThemeKeys, ThemeObject } from '@microlink/react-json-view'
 //@ts-ignore
-const _paq = (window._paq = window._paq || [])
+import * as packageJson from '../../../../../package.json'
 
 const profile = {
   name: 'vyperCompilationDetails',
@@ -41,7 +42,7 @@ export class VyperCompilationDetailsPlugin extends ViewPlugin {
     this.handleThemeChange()
     await this.call('tabs', 'focus', 'vyperCompilationDetails')
     this.renderComponent()
-    _paq.push(['trackEvent', 'plugin', 'activated', 'vyperCompilationDetails'])
+    trackMatomoEvent(this, { category: 'plugin', action: 'activated', name: 'vyperCompilationDetails', isClick: true })
   }
 
   onDeactivation(): void {
@@ -56,18 +57,6 @@ export class VyperCompilationDetailsPlugin extends ViewPlugin {
     const active = await this.call('theme', 'currentTheme')
     if (active.quality === 'dark') {
       switch (active.name) {
-      case 'HackerOwl':
-        this.theme = 'harmonic'
-        this.themeStyle = { backgroundColor: active.backgroundColor }
-        break
-      case 'Black':
-        this.theme = 'eighties'
-        this.themeStyle = { backgroundColor: active.backgroundColor }
-        break
-      case 'Cyborg':
-        this.theme = 'shapeshifter'
-        this.themeStyle = { backgroundColor: active.backgroundColor }
-        break
       case 'Dark':
         this.theme = 'flat'
         this.themeStyle = { backgroundColor: active.backgroundColor }
@@ -78,27 +67,7 @@ export class VyperCompilationDetailsPlugin extends ViewPlugin {
         break
       }
     } else {
-      switch (active.name) {
-      case 'Candy':
-        this.theme = 'apathy:inverted'
-        this.themeStyle = { backgroundColor: active.backgroundColor }
-        break
-      case 'Midcentury':
-        this.theme = 'apathy:inverted'
-        this.themeStyle = { backgroundColor: active.backgroundColor }
-        break
-      case 'Unicorn':
-        this.theme = 'apathy:inverted'
-        this.themeStyle = { backgroundColor: active.backgroundColor }
-        break
-      case 'Violet':
-        this.theme = 'summerfruit:inverted'
-        this.themeStyle = { backgroundColor: active.backgroundColor }
-        break
-      default:
-        this.theme = 'bright:inverted'
-        break
-      }
+      this.theme = 'bright:inverted'
     }
     this.renderComponent()
   }
@@ -107,18 +76,6 @@ export class VyperCompilationDetailsPlugin extends ViewPlugin {
     this.on('theme', 'themeChanged', (theme: any) => {
       if (theme.quality === 'dark') {
         switch (theme.name) {
-        case 'HackerOwl':
-          this.theme = 'solarized'
-          this.themeStyle = { backgroundColor: theme.backgroundColor }
-          break
-        case 'Black':
-          this.theme = 'shapeshifter'
-          this.themeStyle = { backgroundColor: theme.backgroundColor }
-          break
-        case 'Cyborg':
-          this.theme = 'shapeshifter'
-          this.themeStyle = { backgroundColor: theme.backgroundColor }
-          break
         case 'Dark':
           this.theme = 'harmonic'
           this.themeStyle = { backgroundColor: theme.backgroundColor }
@@ -142,7 +99,7 @@ export class VyperCompilationDetailsPlugin extends ViewPlugin {
   }
   render() {
     return (
-      <div id="compileDetails">
+      <div className="d-flex h-100 w-100 m-0 p-5 bg-light" id="compileDetails">
         <PluginViewWrapper plugin={this} />
       </div>
     )

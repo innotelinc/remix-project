@@ -6,13 +6,14 @@
   "version": "0.1.0",
   "methods": [
     "startTutorial",
-    "addRepository"
+    "addRepository",
+    "getCurrentTutorial"
   ],
   "kind": "none",
   "icon": "assets/img/learnEthLogo.webp",
   "location": "sidePanel",
   "url": "plugins/learneth/index.html",
-  "repo": "https://github.com/ethereum/remix-project/tree/master/apps/learneth",
+  "repo": "https://github.com/remix-project-org/remix-project/tree/master/apps/learneth",
   "maintainedBy": "Remix",
   "authorContact": "",
   "targets": [

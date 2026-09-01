@@ -1,15 +1,12 @@
-import { util } from '@remix-project/remix-lib'
-const { toHexPaddedString, formatMemory } = util
-import { helpers } from '@remix-project/remix-lib'
+
+import { ConsoleLogs, hash, util, helpers } from '@remix-project/remix-lib'
+const { toHexPaddedString, formatMemory, padHexToEven } = util
 const { normalizeHexAddress } = helpers.ui
-import { ConsoleLogs, hash } from '@remix-project/remix-lib'
-import { toChecksumAddress, bytesToHex, Address, toBytes, bigIntToHex } from '@ethereumjs/util'
-import utils, { toBigInt } from 'web3-utils'
-import { isBigInt } from 'web3-validator'
-import { ethers } from 'ethers'
+import { toChecksumAddress, bytesToHex, toBytes, createAddressFromString, PrefixedHexString } from '@ethereumjs/util'
+import { Interface, zeroPadValue, keccak256, hexlify, toUtf8String, toUtf8Bytes, formatEther, parseEther, isAddress, formatUnits, parseUnits } from 'ethers'
 import { VMContext } from './vm-context'
-import type { EVMStateManagerInterface } from '@ethereumjs/common'
-import type { EVMResult, InterpreterStep, Message } from '@ethereumjs/evm'
+import type { StateManagerInterface } from '@ethereumjs/common'
+import type { InterpreterStep } from '@ethereumjs/evm'
 import type { AfterTxEvent, VM } from '@ethereumjs/vm'
 import type { TypedTransaction } from '@ethereumjs/tx'
 
@@ -40,10 +37,9 @@ export class VmProxy {
   toWei
   toBigNumber
   isAddress
-  utils
   txsMapBlock
   blocks
-  stateCopy: EVMStateManagerInterface
+  stateCopy: StateManagerInterface
   flagrecordVMSteps: boolean
   lastMemoryUpdate: Array<string>
   callIncrement: bigint
@@ -62,14 +58,7 @@ export class VmProxy {
     this.processingIndex = null
     this.previousDepth = 0
     this.incr = 0
-    this.eth = {}
     this.debug = {}
-    this.eth.getCode = (address, cb) => this.getCode(address, cb)
-    this.eth.getTransaction = (txHash, cb) => this.getTransaction(txHash, cb)
-    this.eth.getTransactionReceipt = (txHash, cb) => this.getTransactionReceipt(txHash, cb)
-    this.eth.getTransactionFromBlock = (blockNumber, txIndex, cb) => this.getTransactionFromBlock(blockNumber, txIndex, cb)
-    this.eth.getBlockNumber = (cb) => this.getBlockNumber(cb)
-    this.eth.getStorageAt = (address: string, position: string, blockNumber: string, cb) => this.getStorageAt(address, position, blockNumber, cb)
     this.debug.traceTransaction = (txHash, options, cb) => this.traceTransaction(txHash, options, cb)
     this.debug.storageRangeAt = (blockNumber, txIndex, address, start, maxLength, cb) => this.storageRangeAt(blockNumber, txIndex, address, start, maxLength, cb)
     this.debug.preimage = (hashedKey, cb) => this.preimage(hashedKey, cb)
@@ -78,16 +67,14 @@ export class VmProxy {
     this.storageCache = {}
     this.sha3Preimages = {}
     // util
-    this.sha3 = (...args) => utils.sha3.apply(this, args)
-    this.toHex = (...args) => utils.toHex.apply(this, args)
-    this.toAscii = (...args) => utils.toAscii.apply(this, args)
-    this.fromAscii = (...args) => utils.fromAscii.apply(this, args)
-    this.fromDecimal = (...args) => utils.fromDecimal.apply(this, args)
-    this.fromWei = (...args) => utils.fromWei.apply(this, args)
-    this.toWei = (...args) => utils.toWei.apply(this, args)
-    this.toBigNumber = (...args) => toBigInt.apply(this, args)
-    this.isAddress = (...args) => utils.isAddress.apply(this, args)
-    this.utils = utils
+    this.sha3 = (...args) => keccak256.apply(this, args)
+    this.toHex = (...args) => hexlify.apply(this, args)
+    this.toAscii = (...args) => toUtf8String.apply(this, args)
+    this.fromAscii = (...args) => toUtf8Bytes.apply(this, args)
+    this.fromWei = (...args) => formatUnits.apply(this, args)
+    this.toWei = (...args) => parseUnits.apply(this, args)
+    this.toBigNumber = (...args) => BigInt.apply(this, args)
+    this.isAddress = (...args) => isAddress.apply(this, args)
     this.txsMapBlock = {}
     this.blocks = {}
     this.lastMemoryUpdate = []
@@ -203,7 +190,7 @@ export class VmProxy {
       try {
         await (async (processingHash, processingAddress, self) => {
           try {
-            const account = Address.fromString(processingAddress)
+            const account = createAddressFromString(processingAddress)
             const storage = await self.vm.stateManager.dumpStorage(account)
             self.storageCache['after_' + processingHash][processingAddress] = storage
           } catch (e) {
@@ -275,24 +262,24 @@ export class VmProxy {
         const fnselectorStrInHex = '0x' + fnselectorStr
         const fnselector = parseInt(fnselectorStrInHex)
         const fnArgs = ConsoleLogs[fnselector]
-        const iface = new ethers.utils.Interface([`function log${fnArgs} view`])
+        const iface = new Interface([`function log${fnArgs} view`])
         const functionDesc = iface.getFunction(`log${fnArgs}`)
-        const sigHash = iface.getSighash(`log${fnArgs}`)
+        const sigHash = functionDesc.selector
         if (fnArgs.includes('uint') && sigHash !== fnselectorStrInHex) {
           payload = payload.replace(fnselectorStr, sigHash)
         } else {
           payload = '0x' + payload
         }
-        let consoleArgs = iface.decodeFunctionData(functionDesc, payload)
-        consoleArgs = consoleArgs.map((value) => {
+        const consoleArgs = iface.decodeFunctionData(functionDesc, payload)
+        const consoleArgsMapped = consoleArgs.map((value) => {
           // Copied from: https://github.com/web3/web3.js/blob/e68194bdc590d811d4bf66dde12f99659861a110/packages/web3-utils/src/utils.js#L48C10-L48C10
-          if (value && ((value.constructor && value.constructor.name === 'BigNumber') || isBigInt(value))) {
+          if (value && ((value.constructor && value.constructor.name === 'BigNumber') || typeof value === 'bigint')) {
             return value.toString()
           }
           return value
         })
         this.hhLogs[this.processingHash] = this.hhLogs[this.processingHash] ? this.hhLogs[this.processingHash] : []
-        this.hhLogs[this.processingHash].push(consoleArgs)
+        this.hhLogs[this.processingHash].push(consoleArgsMapped)
       }
 
       if (step.op === 'CREATE' || step.op === 'CALL') {
@@ -305,7 +292,7 @@ export class VmProxy {
           if (!this.storageCache[this.processingHash][this.processingAddress]) {
             (async (processingHash, processingAddress, self) => {
               try {
-                const account = Address.fromString(processingAddress)
+                const account = createAddressFromString(processingAddress)
                 const storage = await self.stateCopy.dumpStorage(account)
                 self.storageCache[processingHash][processingAddress] = storage
               } catch (e) {
@@ -331,7 +318,7 @@ export class VmProxy {
 
   getCode (address, cb) {
     address = toChecksumAddress(address)
-    this.vm.stateManager.getContractCode(Address.fromString(address)).then((result) => {
+    this.vm.stateManager.getCode(createAddressFromString(address)).then((result) => {
       cb(null, bytesToHex(result))
     }).catch((error) => {
       cb(error)
@@ -362,7 +349,7 @@ export class VmProxy {
     const txHash = bytesToHex(block.transactions[block.transactions.length - 1].hash())
 
     if (this.storageCache['after_' + txHash] && this.storageCache['after_' + txHash][address]) {
-      const slot = bytesToHex(hash.keccak(toBytes(ethers.utils.hexZeroPad(position, 32))))
+      const slot = bytesToHex(hash.keccak(toBytes(zeroPadValue(padHexToEven(position), 32) as PrefixedHexString)))
       const storage = this.storageCache['after_' + txHash][address]
       return cb(null, storage[slot].value)
     }
@@ -433,9 +420,9 @@ export class VmProxy {
   getSha3Input (stack, memory) {
     const memoryStart = toHexPaddedString(stack[stack.length - 1])
     const memoryLength = toHexPaddedString(stack[stack.length - 2])
-    const memStartDec = toBigInt(memoryStart).toString(10)
+    const memStartDec = BigInt(memoryStart).toString(10)
     const memoryStartInt = parseInt(memStartDec) * 2
-    const memLengthDec = toBigInt(memoryLength).toString(10)
+    const memLengthDec = BigInt(memoryLength).toString(10)
     const memoryLengthInt = parseInt(memLengthDec.toString()) * 2
 
     let i = Math.floor(memoryStartInt / 32)

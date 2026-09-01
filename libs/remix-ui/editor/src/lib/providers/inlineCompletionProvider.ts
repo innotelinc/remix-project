@@ -1,187 +1,441 @@
 /* eslint-disable no-control-regex */
 import { EditorUIProps, monacoTypes } from '@remix-ui/editor';
-import { CompletionTimer } from './completionTimer';
+import { CompletionParams } from '@remix/remix-ai-core';
+import { trackMatomoEvent, AIEvent, MatomoEvent } from '@remix-api'
+// Do not import monaco runtime here to avoid bundling it. Use types and the injected instance instead.
+import {
+  AdaptiveRateLimiter,
+  SmartContextDetector,
+  CompletionCache,
+} from '../inlineCompetionsLibs';
 
-import axios, { AxiosResponse } from 'axios'
-import { slice } from 'lodash';
-import { activateService } from '@remixproject/plugin-utils';
-const _paq = (window._paq = window._paq || [])
-
-const controller = new AbortController();
-const { signal } = controller;
-const result: string = ''
+interface CompletionMetadata {
+  text: string;
+  item: monacoTypes.languages.InlineCompletion | null;
+  task: string;
+  displayed: boolean;
+  accepted: boolean;
+  acceptanceType: 'full' | 'partial' | null;
+  sessionId: number;
+  onAccepted: () => void;
+}
 
 export class RemixInLineCompletionProvider implements monacoTypes.languages.InlineCompletionsProvider {
   props: EditorUIProps
   monaco: any
   completionEnabled: boolean
-  task: string
-  currentCompletion
+  task: string = 'code_completion'
+  trackMatomoEvent?: (event: AIEvent) => void
 
-  constructor(props: any, monaco: any) {
+  private rateLimiter: AdaptiveRateLimiter;
+  private contextDetector: SmartContextDetector;
+  private cache: CompletionCache;
+  private completionSessionId: number = 0;
+
+  // Use WeakMap to track metadata for each completion independently
+  // This prevents race conditions when multiple completions are in-flight
+  private completionMetadata: WeakMap<monacoTypes.languages.InlineCompletions, CompletionMetadata>;
+
+  // Also track by sessionId for text change listener (can't use WeakMap there)
+  // Public so editor.tsx can iterate over active sessions
+  public sessionMetadata: Map<number, CompletionMetadata>;
+
+  constructor(props: any, monaco: any, trackMatomoEvent?: (event: AIEvent) => void) {
     this.props = props
     this.monaco = monaco
+    this.trackMatomoEvent = trackMatomoEvent
     this.completionEnabled = true
+
+    this.rateLimiter = new AdaptiveRateLimiter();
+    this.contextDetector = new SmartContextDetector();
+    this.cache = new CompletionCache();
+    this.completionMetadata = new WeakMap();
+    this.sessionMetadata = new Map();
   }
 
-  async provideInlineCompletions(model: monacoTypes.editor.ITextModel, position: monacoTypes.Position, context: monacoTypes.languages.InlineCompletionContext, token: monacoTypes.CancellationToken): Promise<monacoTypes.languages.InlineCompletions<monacoTypes.languages.InlineCompletion>> {
-    if (context.selectedSuggestionInfo) {
+  // Called from external code (editor.tsx) when full completion is detected via text change
+  // Monaco doesn't have a handleAccept callback, so we detect full Tab completions this way
+  private handleExternalAcceptance(sessionId: number): void {
+    const metadata = this.sessionMetadata.get(sessionId);
+    if (!metadata) {
       return;
     }
-    const getTextAtLine = (lineNumber) => {
+
+    // Prevent duplicate tracking (in case handlePartialAccept was already called)
+    if (metadata.accepted) {
+      return;
+    }
+
+    metadata.accepted = true;
+    metadata.acceptanceType = 'full'; // Full Tab completion
+
+    this.rateLimiter.trackCompletionAccepted();
+  }
+
+  async provideInlineCompletions(
+    model: monacoTypes.editor.ITextModel,
+    position: monacoTypes.Position,
+    context: monacoTypes.languages.InlineCompletionContext,
+    token: monacoTypes.CancellationToken
+  ): Promise<monacoTypes.languages.InlineCompletions<monacoTypes.languages.InlineCompletion>> {
+
+    // Check if completion is enabled
+    const isActivate = await this.props.plugin.call('settings', 'get', 'settings/copilot/suggest/activate')
+    if (!isActivate) {
+      return { items: []};
+    }
+
+    // Check rate limiting (bypass for Ollama since it runs locally)
+    const currentTime = Date.now();
+    const assistantProvider = await this.props.plugin.call('remixAI', 'getAssistantProvider')
+    if (assistantProvider !== 'ollama' && !this.rateLimiter.shouldAllowRequest(currentTime)) {
+      return { items: []};
+    }
+
+    try {
+      const user = await this.props.plugin.call('auth', 'getUser')
+      if (assistantProvider !== 'ollama' && !user) {
+        return { items: []};
+      }
+    } catch (e) {
+      return { items: []};
+    }
+
+    // Check context appropriateness
+    if (!this.contextDetector.shouldShowCompletion(model, position, currentTime)) {
+      return { items: []};
+    }
+
+    // Record request - only for completions that pass all checks
+    this.rateLimiter.recordRequest(currentTime);
+
+    // Create new session
+    this.completionSessionId++;
+    const sessionId = this.completionSessionId;
+
+    try {
+      const result = await this.executeCompletion(model, position, context, token, sessionId);
+      this.rateLimiter.recordCompletion();
+      return result;
+    } catch (error) {
+      this.rateLimiter.recordCompletion();
+      return { items: []};
+    }
+  }
+
+  private async executeCompletion(
+    model: monacoTypes.editor.ITextModel,
+    position: monacoTypes.Position,
+    context: monacoTypes.languages.InlineCompletionContext,
+    token: monacoTypes.CancellationToken,
+    sessionId: number
+  ): Promise<monacoTypes.languages.InlineCompletions<monacoTypes.languages.InlineCompletion>> {
+    const getTextAtLine = (lineNumber: number) => {
       const lineRange = model.getFullModelRange().setStartPosition(lineNumber, 1).setEndPosition(lineNumber + 1, 1);
       return model.getValueInRange(lineRange);
     }
 
-    // get text before the position of the completion
-    const word = model.getValueInRange({
-      startLineNumber: 1,
-      startColumn: 1,
-      endLineNumber: position.lineNumber,
-      endColumn: position.column,
-    });
+    // Get viewport-aware context (what user actually sees on screen)
+    const getViewportContext = (model: monacoTypes.editor.ITextModel, position: monacoTypes.Position, editor?: monacoTypes.editor.ICodeEditor) => {
+      let visibleRange = null;
 
-    // get text after the position of the completion
-    const word_after = model.getValueInRange({
-      startLineNumber: position.lineNumber,
-      startColumn: position.column,
-      endLineNumber: model.getLineCount(),
-      endColumn: getTextAtLine(model.getLineCount()).length + 1,
-    });
+      // Try to get the visible range from the editor if available
+      if (editor && editor.getVisibleRanges) {
+        const visibleRanges = editor.getVisibleRanges();
+        if (visibleRanges && visibleRanges.length > 0) {
+          visibleRange = visibleRanges[0];
+        }
+      }
 
-    if (!word.endsWith(' ') &&
-      !word.endsWith('.') &&
-      !word.endsWith('(')) {
-      return;
-    }
+      // Fallback: approximate visible range (about 30 lines above/below cursor)
+      if (!visibleRange) {
+        const approximateViewportSize = 30;
+        const startLine = Math.max(1, position.lineNumber - approximateViewportSize);
+        const endLine = Math.min(model.getLineCount(), position.lineNumber + approximateViewportSize);
 
+        visibleRange = {
+          startLineNumber: startLine,
+          startColumn: 1,
+          endLineNumber: endLine,
+          endColumn: model.getLineMaxColumn(endLine)
+        };
+      }
+
+      const contextBefore = model.getValueInRange({
+        startLineNumber: Math.max(visibleRange.startLineNumber, 1),
+        startColumn: visibleRange.startLineNumber === position.lineNumber ? 1 : 1,
+        endLineNumber: position.lineNumber,
+        endColumn: position.column,
+      });
+
+      const contextAfter = model.getValueInRange({
+        startLineNumber: position.lineNumber,
+        startColumn: position.column,
+        endLineNumber: Math.min(visibleRange.endLineNumber, model.getLineCount()),
+        endColumn: visibleRange.endLineNumber === model.getLineCount()
+          ? getTextAtLine(model.getLineCount()).length + 1
+          : model.getLineMaxColumn(visibleRange.endLineNumber),
+      });
+
+      return { contextBefore, contextAfter };
+    };
+
+    // Try to get the editor instance for accurate viewport detection
+    let editor = null;
     try {
-      const isActivate = await await this.props.plugin.call('settings', 'get', 'settings/copilot/suggest/activate')
-      if (!isActivate) return
-    } catch (err) {
-      return;
+      // Access the editor through Monaco's editor instances
+      const editorInstances = this.monaco.editor.getEditors();
+      if (editorInstances && editorInstances.length > 0) {
+        // splitted editors not handled now
+        editor = editorInstances.find(e => e.getModel() === model) || editorInstances[0];
+      }
+    } catch (e) {
+      console.debug('Could not access editor instance for viewport detection:', e);
     }
 
+    const { contextBefore, contextAfter } = getViewportContext(model, position, editor);
+    const word = contextBefore;
+    const word_after = contextAfter;
+
+    // Create cache key and check cache
+    const cacheKey = this.cache.createCacheKey(word, word_after, position, this.task);
+
+    const result = await this.cache.handleRequest(cacheKey, async () => {
+      return await this.performCompletion(word, word_after, position);
+    });
+
+    // Create metadata for this completion
+    if (result && result.items && result.items.length > 0) {
+      const firstItem = result.items[0];
+      const insertText = typeof firstItem.insertText === 'string'
+        ? firstItem.insertText
+        : firstItem.insertText?.snippet || '';
+
+      const metadata: CompletionMetadata = {
+        text: insertText,
+        item: firstItem,
+        task: this.task,
+        displayed: false,
+        accepted: false,
+        acceptanceType: null,
+        sessionId,
+        onAccepted: () => {
+          this.handleExternalAcceptance(sessionId);
+        }
+      };
+
+      this.completionMetadata.set(result, metadata);
+      this.sessionMetadata.set(sessionId, metadata);
+    }
+
+    return result;
+  }
+
+  private async performCompletion(
+    word: string,
+    word_after: string,
+    position: monacoTypes.Position
+  ): Promise<monacoTypes.languages.InlineCompletions<monacoTypes.languages.InlineCompletion>> {
+    // Check if we should trigger completion based on context
+
+    // Code generation (triple slash comment)
     try {
       const split = word.split('\n')
-      if (split.length < 2) return
-      const ask = split[split.length - 2].trimStart()
-      if (split[split.length - 1].trim() === '' && ask.startsWith('///')) {
-        // use the code generation model, only take max 1000 word as context
-        this.props.plugin.call('terminal', 'log', { type: 'aitypewriterwarning', value: 'Solcoder - generating code for following comment: ' + ask.replace('///', '') })
-
-        this.task = 'code_generation'
-        const data = await this.props.plugin.call('solcoder', 'code_generation', word)
-
-        const parsedData = data[0].trimStart() //JSON.parse(data).trimStart()
-        const item: monacoTypes.languages.InlineCompletion = {
-          insertText: parsedData
-        };
-        return {
-          items: [item],
-          enableForwardStability: true
+      if (split.length >= 2) {
+        const ask = split[split.length - 2].trimStart()
+        if (split[split.length - 1].trim() === '' && ask.startsWith('///')) {
+          return await this.handleCodeGeneration(word, word_after, position, ask);
         }
       }
     } catch (e) {
-      console.error(e)
-      return
+      console.warn(e)
+      return { items: []}
     }
 
-    if (word.split('\n').at(-1).trimStart().startsWith('//') ||
-        word.split('\n').at(-1).trimStart().startsWith('/*') ||
-        word.split('\n').at(-1).trimStart().startsWith('*') ||
-        word.split('\n').at(-1).trimStart().startsWith('*/') ||
-        word.split('\n').at(-1).endsWith(';')
-    ){
-      return; // do not do completion on single and multiline comment
+    // Code insertion (newline)
+    if (word.replace(/ +$/, '').endsWith('\n')) {
+      return await this.handleCodeInsertion(word, word_after, position);
     }
 
-    // abort if there is a signal
-    if (token.isCancellationRequested) {
-      return
+    // Regular code completion
+    return await this.handleCodeCompletion(word, word_after, position);
+  }
+
+  private async handleCodeGeneration(
+    word: string,
+    word_after: string,
+    position: monacoTypes.Position,
+    ask: string
+  ): Promise<monacoTypes.languages.InlineCompletions<monacoTypes.languages.InlineCompletion>> {
+    console.log('[handleCodeGeneration] Started', { ask: ask.replace('///', '') });
+
+    this.props.plugin.call('terminal', 'log', {
+      type: 'aitypewriterwarning',
+      value: 'RemixAI - generating code for following comment: ' + ask.replace('///', '')
+    })
+
+    const data = await this.props.plugin.call('remixAI', 'code_insertion', word, word_after)
+    this.trackMatomoEvent?.({ category: 'ai', action: 'completion', name: 'code_generation', isClick: false })
+    this.task = 'code_generation'
+
+    const parsedData = data.trimStart()
+    const item: monacoTypes.languages.InlineCompletion = {
+      insertText: parsedData,
+      range: new this.monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column)
     }
 
-    // abort if the completion is not enabled
-    if (!this.completionEnabled) {
-      return
+    return {
+      items: [item],
+      enableForwardStability: true
     }
+  }
 
-    if (word.replace(/ +$/, '').endsWith('\n')){
-      // Code insertion
-      try {
-        this.task = 'code_insertion'
-        const output = await this.props.plugin.call('solcoder', 'code_insertion', word, word_after)
-        const generatedText = output[0] // no need to clean it. should already be
-        const item: monacoTypes.languages.InlineCompletion = {
-          insertText: generatedText
-        };
-
-        this.completionEnabled = false
-        const handleCompletionTimer = new CompletionTimer(100, () => { this.completionEnabled = true });
-        handleCompletionTimer.start()
-
-        return {
-          items: [item],
-          enableForwardStability: true
-        }
-      }
-      catch (err){
-        return
-      }
-    }
-
-    let result
+  private async handleCodeInsertion(
+    word: string,
+    word_after: string,
+    position: monacoTypes.Position
+  ): Promise<monacoTypes.languages.InlineCompletions<monacoTypes.languages.InlineCompletion>> {
     try {
-      // Code completion
+      CompletionParams.stop = ['\n\n', '```']
+      const output = await this.props.plugin.call('remixAI', 'code_insertion', word, word_after, CompletionParams)
+      this.trackMatomoEvent?.({ category: 'ai', action: 'completion', name: 'code_insertion', isClick: false })
+      const generatedText = output
+
+      this.task = 'code_insertion'
+      const item: monacoTypes.languages.InlineCompletion = {
+        insertText: generatedText,
+        range: new this.monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column)
+      };
+
+      return {
+        items: [item],
+        enableForwardStability: true,
+      }
+    } catch (err) {
+      return { items: []}
+    }
+  }
+
+  private async handleCodeCompletion(
+    word: string,
+    word_after: string,
+    position: monacoTypes.Position
+  ): Promise<monacoTypes.languages.InlineCompletions<monacoTypes.languages.InlineCompletion>> {
+    try {
+      CompletionParams.stop = ['\n', '```']
       this.task = 'code_completion'
-      const output = await this.props.plugin.call('solcoder', 'code_completion', word)
-      const generatedText = output[0]
+      const output = await this.props.plugin.call('remixAI', 'code_insertion', word, word_after, CompletionParams)
+      this.trackMatomoEvent?.({ category: 'ai', action: 'completion', name: 'code_completion', isClick: false })
+      const generatedText = output
       let clean = generatedText
 
       if (generatedText.indexOf('@custom:dev-run-script./') !== -1) {
         clean = generatedText.replace('@custom:dev-run-script', '@custom:dev-run-script ')
       }
-      clean = clean.replace(word, '').trimStart()
-      clean = this.process_completion(clean)
-
+      clean = clean.replace(word, '')
+      clean = this.process_completion(clean, word_after)
       const item: monacoTypes.languages.InlineCompletion = {
-        insertText: clean
+        insertText: clean,
+        range: new this.monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column)
       };
-
-      // handle the completion timer by locking suggestions request for 2 seconds
-      this.completionEnabled = false
-      const handleCompletionTimer = new CompletionTimer(100, () => { this.completionEnabled = true });
-      handleCompletionTimer.start()
-
       return {
         items: [item],
-        enableForwardStability: true
+        enableForwardStability: true,
       }
     } catch (err) {
-      return
+      const item: monacoTypes.languages.InlineCompletion = { insertText: " " }
+      return {
+        items: [item],
+        enableForwardStability: true,
+      }
     }
   }
 
-  process_completion(data: any) {
-    let clean = data.split('\n')[0].startsWith('\n') ? [data.split('\n')[0], data.split('\n')[1]].join('\n'): data.split('\n')[0]
-
+  process_completion(data: any, word_after: any) {
+    const clean = data
     // if clean starts with a comment, remove it
-    if (clean.startsWith('//') || clean.startsWith('/*') || clean.startsWith('*') || clean.startsWith('*/')){
+    if (clean.startsWith('//') || clean.startsWith('/*') || clean.startsWith('*') || clean.startsWith('*/')) {
       return ""
     }
-    // remove comment inline
-    clean = clean.split('//')[0].trimEnd()
     return clean
   }
 
-  handleItemDidShow?(completions: monacoTypes.languages.InlineCompletions<monacoTypes.languages.InlineCompletion>, item: monacoTypes.languages.InlineCompletion, updatedInsertText: string): void {
-    this.currentCompletion = { 'item':item, 'task':this.task }
-    _paq.push(['trackEvent', 'ai', 'solcoder', this.task + '_did_show'])
+  handleItemDidShow?(
+    completions: monacoTypes.languages.InlineCompletions<monacoTypes.languages.InlineCompletion>,
+    item: monacoTypes.languages.InlineCompletion,
+    updatedInsertText: string
+  ): void {
+    const metadata = this.completionMetadata.get(completions);
+    if (!metadata) {
+      return;
+    }
+
+    metadata.displayed = true;
+
+    console.log('[handleItemDidShow] Completion shown to user', {
+      sessionId: metadata.sessionId,
+      task: metadata.task,
+      textLength: updatedInsertText.length
+    });
+
+    this.rateLimiter.trackCompletionShown()
+    this.trackMatomoEvent?.({ category: 'ai', action: 'completion', name: 'code_completion_did_show', isClick: true })
   }
-  handlePartialAccept?(completions: monacoTypes.languages.InlineCompletions<monacoTypes.languages.InlineCompletion>, item: monacoTypes.languages.InlineCompletion, acceptedCharacters: number): void {
-    _paq.push(['trackEvent', 'ai', 'solcoder', this.task + '_partial_accept'])
+
+  // This is called when user accepts part of the completion (Ctrl+RightArrow)
+  handlePartialAccept?(
+    completions: monacoTypes.languages.InlineCompletions<monacoTypes.languages.InlineCompletion>,
+    item: monacoTypes.languages.InlineCompletion,
+    acceptedCharacters: number
+  ): void {
+    const metadata = this.completionMetadata.get(completions);
+    if (!metadata) {
+      console.log('[handlePartialAccept] No metadata found for completion');
+      return;
+    }
+
+    // Prevent duplicate tracking
+    if (metadata.accepted) {
+      console.log('[handlePartialAccept] DUPLICATE acceptance detected - ignoring', {
+        sessionId: metadata.sessionId,
+        previousAcceptanceType: metadata.acceptanceType
+      });
+      return;
+    }
+
+    metadata.accepted = true;
+    metadata.acceptanceType = 'partial';
+
+    this.rateLimiter.trackCompletionAccepted()
+    this.trackMatomoEvent?.({ category: 'ai', action: 'completion', name: metadata.task + '_partial_accept', isClick: false })
   }
-  freeInlineCompletions(completions: monacoTypes.languages.InlineCompletions<monacoTypes.languages.InlineCompletion>): void {
+
+  freeInlineCompletions(
+    completions: monacoTypes.languages.InlineCompletions<monacoTypes.languages.InlineCompletion>
+  ): void {
+    const metadata = this.completionMetadata.get(completions);
+    if (!metadata) {
+      return;
+    }
+
+    setTimeout(() => {
+      if (metadata.displayed && !metadata.accepted) {
+        this.rateLimiter.trackCompletionRejected()
+      } else if (metadata.accepted) {
+        // this is already handled by the editor callback onAccepted
+      } else {
+      }
+
+      this.sessionMetadata.delete(metadata.sessionId);
+    }, 10); // Small delay to let text change events process
+  }
+
+  getStats() {
+    return {
+      rateLimiter: this.rateLimiter.getStats(),
+      contextDetector: this.contextDetector.getStats(),
+      cache: this.cache.getStats(),
+    };
   }
 
   groupId?: string;

@@ -1,15 +1,9 @@
 import React, {useState, useEffect, useContext, useRef, ReactNode} from 'react' // eslint-disable-line
-
 import './remix-ui-grid-view.css'
 import CustomCheckbox from './components/customCheckbox'
 import FiltersContext from "./filtersContext"
-
-declare global {
-  interface Window {
-    _paq: any
-  }
-}
-const _paq = window._paq = window._paq || []
+import { MatomoEvent, GridViewEvent } from '@remix-api'
+import { TrackingContext } from '@remix-ide/tracking'
 
 interface RemixUIGridViewProps {
   plugin: any
@@ -30,6 +24,10 @@ export const RemixUIGridView = (props: RemixUIGridViewProps) => {
   const [filter, setFilter] = useState("")
   const showUntagged = props.showUntagged || false
   const showPin = props.showPin || false
+  const { trackMatomoEvent: baseTrackEvent } = useContext(TrackingContext)
+  const trackMatomoEvent = <T extends MatomoEvent = GridViewEvent>(event: T) => {
+    baseTrackEvent?.<T>(event)
+  }
   const updateValue = (key: string, enabled: boolean, color?: string) => {
     if (!color || color === '') color = setKeyValueMap[key].color
     setKeyValueMap((prevMap) => ({
@@ -100,26 +98,26 @@ export const RemixUIGridView = (props: RemixUIGridViewProps) => {
         <div className="d-flex flex-column w-100 remixui_grid_view">
           <div className='d-flex p-4 bg-light flex-column  remixui_grid_view_titlebar'>
             <div className='d-flex flex-row align-items-center mb-2'>
-              { props.logo && <img className='remixui_grid_view_logo mr-2' src={props.logo} /> }
+              { props.logo && <img className='remixui_grid_view_logo me-2' src={props.logo} /> }
               { props.title && <h3 className='mb-0'>{ props.title }</h3> }
             </div>
             { props.description && <div className='pb-3 remixui_grid_view_title'>{ props.description }</div> }
             { props.enableFilter && <div className='d-flex flex-row'>
-              <div className="d-flex flex-row pr-2 pb-1 align-items-center justify-content-between">
+              <div className="d-flex flex-row pe-2 pb-1 align-items-center justify-content-between">
                 <div className='d-flex' id="GVFilter">
                   <button
                     disabled={state.searchDisable}
                     className="remixui_grid_view_btn text-secondary form-control bg-light border d-flex align-items-center p-2 justify-content-center fas fa-filter bg-light"
                     onClick={(e) => {
                       setFilter(searchInputRef.current.value)
-                      _paq.push(['trackEvent', 'GridView' + props.title ? props.title : '', 'filter', searchInputRef.current.value])
+                      trackMatomoEvent({ category: 'gridView', action: 'filterWithTitle', name: props.title || '', value: searchInputRef.current.value, isClick: true })
                     }}
                   ></button>
                   <input
                     ref={searchInputRef}
                     type="text"
                     style={{ minWidth: '100px' }}
-                    className="border form-control mr-4"
+                    className="border form-control me-4"
                     id="GVFilterInput"
                     placeholder={"Filter the list"}
                     data-id="RemixGVFilterInput"
@@ -127,7 +125,7 @@ export const RemixUIGridView = (props: RemixUIGridViewProps) => {
                 </div>
                 <div className='d-flex flex-row'>
                   { Object.keys(keyValueMap).map((key) => (
-                    <CustomCheckbox label={key} />
+                    <CustomCheckbox key={key} label={key} />
                   )) }
                 </div>
               </div>

@@ -1,13 +1,13 @@
 import { ReadBlobResult, ReadCommitResult } from "isomorphic-git";
 import React from "react";
 import { fileStatus, fileStatusMerge, setRemoteBranchCommits, resetRemoteBranchCommits, setBranches, setCanCommit, setCommitChanges, setCommits, setCurrentBranch, setGitHubUser, setLoading, setRemoteBranches, setRemotes, setRepos, setUpstream, setLocalBranchCommits, setBranchDifferences, setRemoteAsDefault, setScopes, setLog, clearLog, setUserEmails, setCurrenHead, setStoragePayload, resetBranchDifferences, setTimestamp, setGitLogCount } from "../state/gitpayload";
-import { gitActionDispatch, statusMatrixType, gitState, gitLog, fileStatusResult, storage, gitMatomoEventTypes } from '../types';
+import { gitActionDispatch, statusMatrixType, gitState, gitLog, fileStatusResult, storage } from '../types';
 import { removeSlash } from "../utils";
 import { disableCallBacks, enableCallBacks } from "./listeners";
 import { ModalTypes, appActionTypes, AppAction } from "@remix-ui/app";
-import { sendToMatomo, setFileDecorators } from "./pluginActions";
+import { setFileDecorators } from "./pluginActions";
 import { Plugin } from "@remixproject/engine";
-import { addInputType, branch, branchDifference, checkoutInputType, cloneInputType, commitChange, CustomRemixApi, fetchInputType, GitHubUser, pullInputType, pushInputType, remote, rmInputType, userEmails } from "@remix-api";
+import { addInputType, branch, branchDifference, checkoutInputType, cloneInputType, commitChange, CustomRemixApi, fetchInputType, GitEvent, GitHubUser, pullInputType, pushInputType, remote, rmInputType, trackMatomoEvent, userEmails } from "@remix-api";
 
 export const fileStatuses = [
   ["new,untracked", 0, 2, 0], // new, untracked
@@ -39,9 +39,20 @@ export const setPlugin = (p: Plugin, dispatcher: React.Dispatch<gitActionDispatc
   appDispatcher = appDispatch
 }
 
+// Helper function for tracking git events from library functions
+const trackGitEvent = (action: GitEvent['action'], name?: string, isClick: boolean = false) => {
+  if (!plugin) return
+  trackMatomoEvent(plugin, {
+    category: 'git',
+    action,
+    name,
+    isClick
+  })
+}
+
 export const init = async () => {
-  await sendToMatomo(gitMatomoEventTypes.INIT)
-  await plugin.call('dgitApi', "init");
+  trackGitEvent("INIT", undefined, true)
+  await plugin.call('dgitApi', 'init');
   dispatch(setTimestamp(Date.now()))
   await getBranches();
 }
@@ -52,6 +63,20 @@ export const getBranches = async () => {
 
   dispatch(setBranches(branches));
   await showCurrentBranch();
+
+  // Get the current branch and fetch differences to update sync button state
+  try {
+    const branch = await currentBranch();
+    if (branch && branch.name) {
+      const state = {
+        defaultRemote: null,
+        remotes: await plugin.call('dgitApi', 'remotes')
+      }
+      await getBranchDifferences(branch, null, state as any);
+    }
+  } catch (e) {
+    // Silently fail if unable to get branch differences
+  }
 }
 export const getRemotes = async () => {
 
@@ -132,7 +157,6 @@ export const showCurrentBranch = async () => {
     const currentHead = await getCommitFromRef('HEAD');
     dispatch(setCurrenHead(currentHead));
   } catch (e) {
-    console.log(e)
     dispatch(setCurrenHead(''));
   }
 
@@ -153,7 +177,7 @@ export const currentBranch = async () => {
 }
 
 export const createBranch = async (name: string = "") => {
-  await sendToMatomo(gitMatomoEventTypes.CREATEBRANCH)
+  trackGitEvent("BRANCH", "CREATE", true)
   dispatch(setLoading(true))
   if (name) {
     await plugin.call('dgitApi', 'branch', { ref: name, force: true, checkout: true });
@@ -184,7 +208,7 @@ const settingsWarning = async () => {
 
 export const commit = async (message: string = "") => {
 
-  await sendToMatomo(gitMatomoEventTypes.COMMIT)
+  trackGitEvent("COMMIT", undefined, true)
   try {
     const credentials = await settingsWarning()
     if (!credentials) {
@@ -202,7 +226,7 @@ export const commit = async (message: string = "") => {
 
     sendToGitLog({
       type: 'success',
-      message: `Commited: ${sha}`
+      message: `Committed: ${sha}`
     })
 
   } catch (err) {
@@ -212,7 +236,7 @@ export const commit = async (message: string = "") => {
 }
 
 export const addall = async (files: fileStatusResult[]) => {
-  await sendToMatomo(gitMatomoEventTypes.ADD_ALL)
+  trackGitEvent("ADD_ALL", undefined, true)
   try {
     const filesToAdd = files
       .filter(f => !f.statusNames.includes('deleted'))
@@ -238,7 +262,7 @@ export const addall = async (files: fileStatusResult[]) => {
 }
 
 export const add = async (filepath: addInputType) => {
-  await sendToMatomo(gitMatomoEventTypes.ADD)
+  trackGitEvent("ADD", undefined, true)
   try {
     if (typeof filepath.filepath === "string") {
       filepath.filepath = removeSlash(filepath.filepath)
@@ -254,7 +278,7 @@ export const add = async (filepath: addInputType) => {
 
 }
 
-const getLastCommmit = async () => {
+const getLastCommit = async () => {
   try {
     let currentcommitoid = "";
     currentcommitoid = await getCommitFromRef("HEAD");
@@ -265,7 +289,7 @@ const getLastCommmit = async () => {
 }
 
 export const rm = async (args: rmInputType) => {
-  await sendToMatomo(gitMatomoEventTypes.RM)
+  trackGitEvent("RM", undefined, true)
   await plugin.call('dgitApi', 'rm', {
     filepath: removeSlash(args.filepath),
   });
@@ -276,7 +300,7 @@ export const rm = async (args: rmInputType) => {
 }
 
 export const checkoutfile = async (filename: string) => {
-  const oid = await getLastCommmit();
+  const oid = await getLastCommit();
   if (oid)
     try {
       const commitOid = await plugin.call('dgitApi', 'resolveref', {
@@ -302,9 +326,8 @@ export const checkoutfile = async (filename: string) => {
 }
 
 export const checkout = async (cmd: checkoutInputType) => {
-  sendToMatomo(gitMatomoEventTypes.CHECKOUT)
+  trackGitEvent("CHECKOUT", undefined, true)
   await disableCallBacks();
-  await plugin.call('fileManager', 'closeAllFiles')
   try {
     await plugin.call('dgitApi', 'checkout', cmd)
   } catch (e) {
@@ -316,7 +339,7 @@ export const checkout = async (cmd: checkoutInputType) => {
 
 export const clone = async (input: cloneInputType) => {
 
-  await sendToMatomo(gitMatomoEventTypes.CLONE)
+  trackGitEvent("CLONE", undefined, true)
   dispatch(setLoading(true))
   const urlParts = input.url.split("/");
   const lastPart = urlParts[urlParts.length - 1];
@@ -333,10 +356,10 @@ export const clone = async (input: cloneInputType) => {
 
     sendToGitLog({
       type: 'success',
-      message: `Cloned ${input.url} to ${repoNameWithTimestamp}`
+      message: `Cloned ${input.url} to ${input.dir || repoNameWithTimestamp}`
     })
 
-    plugin.call('notification', 'toast', `Cloned ${input.url} to ${repoNameWithTimestamp}`)
+    plugin.call('notification', 'toast', `Cloned ${input.url} to ${input.dir || repoNameWithTimestamp}`)
 
   } catch (e: any) {
     await parseError(e)
@@ -345,7 +368,7 @@ export const clone = async (input: cloneInputType) => {
 }
 
 export const fetch = async (input: fetchInputType) => {
-  await sendToMatomo(gitMatomoEventTypes.FETCH)
+  trackGitEvent("FETCH", undefined, true)
   dispatch(setLoading(true))
   await disableCallBacks()
   try {
@@ -363,7 +386,7 @@ export const fetch = async (input: fetchInputType) => {
 }
 
 export const pull = async (input: pullInputType) => {
-  await sendToMatomo(gitMatomoEventTypes.PULL)
+  trackGitEvent("PULL", undefined, true)
   dispatch(setLoading(true))
   await disableCallBacks()
   try {
@@ -378,7 +401,7 @@ export const pull = async (input: pullInputType) => {
 }
 
 export const push = async (input: pushInputType) => {
-  await sendToMatomo(gitMatomoEventTypes.PUSH)
+  trackGitEvent("PUSH", undefined, true)
   dispatch(setLoading(true))
   await disableCallBacks()
   try {
@@ -406,7 +429,7 @@ const parseError = async (e: any) => {
 
   // if message conttains 401 Unauthorized, show token warning
   if (e.message.includes('401')) {
-    await sendToMatomo(gitMatomoEventTypes.ERROR, ['401'])
+    trackGitEvent('ERROR', '401')
     const result = await plugin.call('notification', 'modal' as any, {
       title: 'The GitHub token may be missing or invalid',
       message: 'Please check the GitHub token and try again. Error: 401 Unauthorized',
@@ -417,7 +440,7 @@ const parseError = async (e: any) => {
   }
   // if message contains 404 Not Found, show repo not found
   else if (e.message.includes('404')) {
-    await sendToMatomo(gitMatomoEventTypes.ERROR, ['404'])
+    trackGitEvent('ERROR', '404')
     await plugin.call('notification', 'modal' as any, {
       title: 'Repository not found',
       message: 'Please check the URL and try again.',
@@ -428,7 +451,7 @@ const parseError = async (e: any) => {
   }
   // if message contains 403 Forbidden
   else if (e.message.includes('403')) {
-    await sendToMatomo(gitMatomoEventTypes.ERROR, ['403'])
+    trackGitEvent('ERROR', '403')
     await plugin.call('notification', 'modal' as any, {
       title: 'The GitHub token may be missing or invalid',
       message: 'Please check the GitHub token and try again. Error: 403 Forbidden',
@@ -437,7 +460,7 @@ const parseError = async (e: any) => {
       type: ModalTypes.confirm
     })
   } else if (e.toString().includes('NotFoundError') && !e.toString().includes('fetch')) {
-    await sendToMatomo(gitMatomoEventTypes.ERROR, ['BRANCH NOT FOUND ON REMOTE'])
+    trackGitEvent('ERROR', 'BRANCH_NOT_FOUND')
     await plugin.call('notification', 'modal', {
       title: 'Remote branch not found',
       message: 'The branch you are trying to fetch does not exist on the remote. If you have forked this branch from another branch, you may need to fetch the original branch first or publish this branch on the remote.',
@@ -445,7 +468,7 @@ const parseError = async (e: any) => {
       type: ModalTypes.alert
     })
   } else {
-    await sendToMatomo(gitMatomoEventTypes.ERROR, ['UKNOWN'])
+    trackGitEvent('ERROR', 'UNKNOWN')
     await plugin.call('notification', 'alert' as any, {
       title: 'Error',
       message: e.message
@@ -473,7 +496,7 @@ export const repositories = async () => {
       }
 
     } else {
-      await sendToMatomo(gitMatomoEventTypes.ERROR, ['TOKEN ERROR'])
+      trackGitEvent('ERROR', 'TOKEN_ERROR')
       plugin.call('notification', 'alert', {
         id: 'github-token-error',
         title: 'Error getting repositories',
@@ -483,7 +506,7 @@ export const repositories = async () => {
     }
   } catch (e) {
     console.log(e)
-    await sendToMatomo(gitMatomoEventTypes.ERROR, ['TOKEN ERROR'])
+    trackGitEvent('ERROR', 'TOKEN_ERROR')
     plugin.call('notification', 'alert', {
       id: 'github-token-error',
       title: 'Error getting repositories',
@@ -512,7 +535,7 @@ export const remoteBranches = async (owner: string, repo: string) => {
         page++
       }
     } else {
-      await sendToMatomo(gitMatomoEventTypes.ERROR, ['TOKEN ERROR'])
+      trackGitEvent('ERROR', 'TOKEN_ERROR')
       plugin.call('notification', 'alert', {
         title: 'Error getting branches',
         id: 'github-token-error',
@@ -522,7 +545,7 @@ export const remoteBranches = async (owner: string, repo: string) => {
     }
   } catch (e) {
     console.log(e)
-    await sendToMatomo(gitMatomoEventTypes.ERROR, ['TOKEN ERROR'])
+    trackGitEvent('ERROR', 'TOKEN_ERROR')
     plugin.call('notification', 'alert', {
       title: 'Error',
       id: 'github-error',
@@ -578,7 +601,7 @@ export const saveGitHubCredentials = async (credentials: { username: string, ema
         await plugin.call('notification', 'alert', {
           title: 'Error',
           id: 'github-credentials-error',
-          message: `Could not retreive the user from GitHub. You can continue to use the app, but you will not be able to push or pull.`
+          message: `Could not retrieve the user from GitHub. You can continue to use the app, but you will not be able to push or pull.`
         })
       }
       dispatch(setGitHubUser({
@@ -648,14 +671,15 @@ export const loadGitHubUserFromToken = async () => {
         appDispatcher({ type: appActionTypes.setGitHubUser, payload: data.user })
         dispatch(setScopes(data.scopes))
         dispatch(setUserEmails(data.emails))
+
         sendToGitLog({
           type: 'success',
           message: `Github user loaded...`
         })
-        await sendToMatomo(gitMatomoEventTypes.LOADGITHUBUSERSUCCESS)
+        trackGitEvent("LOAD_GITHUB_USER_SUCCESS")
         return true
       } else {
-        await sendToMatomo(gitMatomoEventTypes.ERROR, ['GITHUB USER LOAD ERROR'])
+        trackGitEvent('ERROR', 'GITHUB_USER_LOAD_ERROR')
         sendToGitLog({
           type: 'error',
           message: `Please check your GitHub token in the GitHub settings.`
@@ -702,7 +726,7 @@ export const resolveRef = async (ref: string) => {
 }
 
 export const diff = async (commitChange: commitChange) => {
-  await sendToMatomo(gitMatomoEventTypes.DIFF)
+  trackGitEvent("DIFF", undefined, true)
   if (!commitChange.hashModified) {
     const newcontent = await plugin.call(
       "fileManager",
@@ -873,12 +897,12 @@ export const getBranchCommits = async (branch: branch, page: number) => {
 }
 
 export const setDefaultRemote = async (remote: remote) => {
-  await sendToMatomo(gitMatomoEventTypes.SETDEFAULTREMOTE)
+  trackGitEvent("SET_DEFAULT_REMOTE", undefined, true)
   dispatch(setRemoteAsDefault(remote))
 }
 
 export const addRemote = async (remote: remote) => {
-  await sendToMatomo(gitMatomoEventTypes.ADDREMOTE)
+  trackGitEvent("ADDREMOTE", undefined, true)
   try {
     await plugin.call('dgitApi', 'addremote', remote)
     await getRemotes()
@@ -893,7 +917,7 @@ export const addRemote = async (remote: remote) => {
 }
 
 export const removeRemote = async (remote: remote) => {
-  await sendToMatomo(gitMatomoEventTypes.RMREMOTE)
+  trackGitEvent("RMREMOTE", undefined, true)
   try {
     await plugin.call('dgitApi', 'delremote', remote)
     await getRemotes()
@@ -913,3 +937,6 @@ export const clearGitLog = async () => {
 export const setStorage = async (storage: storage) => {
   dispatch(setStoragePayload(storage))
 }
+
+// Re-export the login function for external use
+export { startGitHubLogin } from './gitLoginActions'

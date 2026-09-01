@@ -4,13 +4,14 @@ import {CopyToClipboard} from '@remix-ui/clipboard' // eslint-disable-line
 import { shortenHexData } from '@remix-ui/helper'
 import { execution } from '@remix-project/remix-lib'
 const typeConversion = execution.typeConversion
+import { toChecksumAddress } from '@ethereumjs/util'
 
 const showTable = (opts, showTableHash) => {
   const intl = useIntl()
   let msg = ''
   let toHash
   const data = opts.data // opts.data = data.tx
-  if (data.to && opts.to !== data.to) {
+  if (!opts.isUserOp && data.to && opts.to !== data.to) {
     toHash = opts.to + ' ' + data.to
   } else {
     toHash = opts.to
@@ -38,7 +39,7 @@ const showTable = (opts, showTableHash) => {
   const val = opts.val != null ? typeConversion.toInt(opts.val) : 0
   const gasInt = opts.gas != null ? typeConversion.toInt(opts.gas) : 0
   return (
-    <table className={`mt-1 mb-2 mr-4  align-self-center ${showTableHash.includes(opts.hash) ? 'active' : ''}`} id="txTable" data-id={`txLoggerTable${opts.hash}`}>
+    <table className={`align-self-center ${showTableHash.includes(opts.hash) ? 'active' : ''}`} id="txTable" data-id={`txLoggerTable${opts.hash}`}>
       <tbody>
         {opts.status !== undefined ? (
           <tr className="remix_ui_terminal_tr">
@@ -95,32 +96,40 @@ const showTable = (opts, showTableHash) => {
         {opts.from ? (
           <tr className="remix_ui_terminal_tr">
             <td className="remix_ui_terminal_td" data-shared={`key_${opts.hash}`}>
-              from
+              <FormattedMessage id="terminal.from" />
             </td>
             <td className="remix_ui_terminal_td" data-id={`txLoggerTableFrom${opts.hash}`} data-shared={`pair_${opts.hash}`}>
-              {opts.from}
+              {toChecksumAddress(opts.from)}
               <CopyToClipboard content={opts.from} />
+              { opts.isUserOp && opts.bundler ? (<>
+                  (BUNDLER: {toChecksumAddress(opts.bundler)}) <CopyToClipboard content={opts.bundler} />
+              </>
+              ) : null }
             </td>
           </tr>
         ) : null}
-        {opts.to ? (
+        {opts.to || (opts.isUserOp && opts.entrypoint)? (
           <tr className="remix_ui_terminal_tr">
             <td className="remix_ui_terminal_td" data-shared={`key_${opts.hash}`}>
-              to
+              <FormattedMessage id="terminal.to" />
             </td>
             <td className="remix_ui_terminal_td" data-id={`txLoggerTableTo${opts.hash}`} data-shared={`pair_${opts.hash}`}>
               {toHash}
-              <CopyToClipboard content={data.to ? data.to : toHash} />
+              { opts.to ? <CopyToClipboard content={data.to ? data.to : toHash} /> : null }
+              { opts.isUserOp && opts.entrypoint ? (<>
+                  (ENTRYPOINT: {toChecksumAddress(opts.entrypoint)}) <CopyToClipboard content={opts.entrypoint} />
+              </>
+              ) : null }
             </td>
           </tr>
         ) : null}
         {opts.gas ? (
           <tr className="remix_ui_terminal_tr">
             <td className="remix_ui_terminal_td" data-shared={`key_${opts.hash}`}>
-              gas
+              <FormattedMessage id="terminal.gas" />
             </td>
             <td className="remix_ui_terminal_td" data-id={`txLoggerTableGas${opts.hash}`} data-shared={`pair_${opts.hash}`}>
-              {gasInt} gas
+              {gasInt} <FormattedMessage id="terminal.gas" />
               <CopyToClipboard content={opts.gas} />
             </td>
           </tr>
@@ -133,6 +142,10 @@ const showTable = (opts, showTableHash) => {
             <td className="remix_ui_terminal_td" data-id={`txLoggerTableTransactionCost${opts.hash}`} data-shared={`pair_${opts.hash}`}>
               {opts.transactionCost} gas {callWarning}
               <CopyToClipboard content={opts.transactionCost} />
+              { opts.isUserOp && opts.paymaster ? (<>
+                  (PAYMASTER: {toChecksumAddress(opts.paymaster)}) <CopyToClipboard content={opts.paymaster} />
+              </>
+              ) : null }
             </td>
           </tr>
         ) : null}
@@ -216,10 +229,10 @@ const showTable = (opts, showTableHash) => {
         {opts.val ? (
           <tr className="remix_ui_terminal_tr">
             <td className="remix_ui_terminal_td" data-shared={`key_${opts.hash}`}>
-              value
+              <FormattedMessage id="terminal.value" />
             </td>
             <td className="remix_ui_terminal_td" data-id={`txLoggerTableHash${opts.hash}`} data-shared={`pair_${opts.hash}`}>
-              {val} wei
+              {val} <FormattedMessage id="terminal.wei" />
               <CopyToClipboard content={`${val} wei`} />
             </td>
           </tr>

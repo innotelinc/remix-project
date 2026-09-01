@@ -1,9 +1,8 @@
 import React from 'react' // eslint-disable-line
 import { format } from 'util'
 import { Plugin } from '@remixproject/engine'
-import { compile } from '@remix-project/remix-solidity'
-import { Transaction } from 'web3-types'
-const _paq = (window._paq = window._paq || []) //eslint-disable-line
+import { compile, CompilerSettings } from '@remix-project/remix-solidity'
+import { trackMatomoEvent } from '@remix-api'
 
 const profile = {
   name: 'solidity-script',
@@ -18,7 +17,7 @@ export class SolidityScript extends Plugin {
   }
 
   async execute(path: string, functionName: string = 'run') {
-    _paq.push(['trackEvent', 'SolidityScript', 'execute', 'script'])
+    trackMatomoEvent(this, { category: 'SolidityScript', action: 'execute', name: 'script', isClick: true })
     this.call('terminal', 'log', `Running free function '${functionName}' from ${path}...`)
     let content = await this.call('fileManager', 'readFile', path)
     const params = await this.call('solidity', 'getCompilerQueryParameters')
@@ -40,11 +39,23 @@ export class SolidityScript extends Plugin {
     const targets = { 'script.sol': { content } }
 
     // compile
-    const compilation = await compile(targets, params, async (url, cb) => {
-      await this.call('contentImport', 'resolveAndSave', url)
-        .then((result) => cb(null, result))
-        .catch((error) => cb(error.message))
-    })
+    const settings: CompilerSettings = {
+      evmVersion: params.evmVersion,
+      optimizer: {
+        enabled: params.optimize,
+        runs: params.runs
+      }
+    }
+    const compilation = await compile(
+      targets,
+      settings,
+      params.language,
+      params.version,
+      async (url, cb) => {
+        await this.call('contentImport', 'resolveAndSave', url)
+          .then((result) => cb(null, result))
+          .catch((error) => cb(error.message))
+      })
 
     if (compilation.data.error) {
       this.call('terminal', 'log', compilation.data.error.formattedMessage)
@@ -70,13 +81,15 @@ export class SolidityScript extends Plugin {
     }
 
     // deploy the contract
-    let tx: Transaction = {
+    let tx: any = {
       from: accounts[0],
       data: bytecode
     }
     let receipt
+    const signer = await web3.getSigner(tx.from || 0)
     try {
-      receipt = await web3.eth.sendTransaction(tx, null, { checkRevertBeforeSending: false, ignoreGasPricing: true })
+      const { hash } = await signer.sendTransaction(tx)
+      receipt = await web3.getTransactionReceipt(hash)
     } catch (e) {
       this.call('terminal', 'logHtml', e.message)
       return
@@ -90,13 +103,14 @@ export class SolidityScript extends Plugin {
     let receiptCall
 
     try {
-      receiptCall = await web3.eth.sendTransaction(tx, null, { checkRevertBeforeSending: false, ignoreGasPricing: true })
+      const { hash } = await signer.sendTransaction(tx)
+      receiptCall = await web3.getTransactionReceipt(hash)
     } catch (e) {
       this.call('terminal', 'logHtml', e.message)
       return
     }
 
-    const hhlogs = await web3.remix.getHHLogsForTx(receiptCall.transactionHash)
+    const hhlogs = await web3.remix.getHHLogsForTx(receiptCall.hash)
 
     if (hhlogs && hhlogs.length) {
       const finalLogs = (
@@ -119,7 +133,7 @@ export class SolidityScript extends Plugin {
           })}
         </div>
       )
-      _paq.push(['trackEvent', 'udapp', 'hardhat', 'console.log'])
+      trackMatomoEvent(this, { category: 'udapp', action: 'hardhat', name: 'console.log', isClick: false })
       this.call('terminal', 'logHtml', finalLogs)
     }
   }

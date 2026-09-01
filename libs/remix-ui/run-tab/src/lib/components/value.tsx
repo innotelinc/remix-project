@@ -32,12 +32,12 @@ export function ValueUI(props: ValueProps) {
     } catch (e) {
       // assign 0 if given value is
       // - not valid (for ex 4345-54)
-      // - contains only '0's (for ex 0000) copy past or edit
+      // - contains only '0's (for ex 0000) copy paste or edit
       inputValue.current.value = '0'
       props.setSendValue('0')
     }
 
-    // if giveen value is negative(possible with copy-pasting) set to 0
+    // if given value is negative(possible with copy-pasting) set to 0
     if (v.lt(0)) {
       inputValue.current.value = '0'
       props.setSendValue('0')
@@ -68,7 +68,7 @@ export function ValueUI(props: ValueProps) {
           <select
             name="unit"
             value={props.sendUnit}
-            className="custom-select"
+            className="form-select"
             id="unit"
             onChange={(e) => {
               props.setUnit(e.target.value as 'ether' | 'finney' | 'gwei' | 'wei')

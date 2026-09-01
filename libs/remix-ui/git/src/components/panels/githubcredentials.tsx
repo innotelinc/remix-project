@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useContext } from "react";
 import { gitActionsContext, pluginActionsContext } from "../../state/context";
 import { gitPluginContext, loaderContext } from "../gitui";
 import { CustomTooltip } from "@remix-ui/helper";
@@ -6,18 +6,25 @@ import { CustomTooltip } from "@remix-ui/helper";
 import { useIntl, FormattedMessage } from "react-intl";
 import { CopyToClipboard } from "@remix-ui/clipboard";
 import { gitMatomoEventTypes } from "../../types";
-import { sendToMatomo } from "../../lib/pluginActions";
+import { GitEvent, MatomoEvent } from "@remix-api";
+import { TrackingContext } from "@remix-ide/tracking";
 
 export const GitHubCredentials = () => {
   const context = React.useContext(gitPluginContext)
   const pluginactions = React.useContext(pluginActionsContext)
   const loader = React.useContext(loaderContext)
   const actions = React.useContext(gitActionsContext)
+  const { trackMatomoEvent: baseTrackEvent } = useContext(TrackingContext)
   const [githubToken, setGithubToken] = React.useState('')
   const [githubUsername, setGithubUsername] = React.useState('')
   const [githubEmail, setGithubEmail] = React.useState('')
   const [scopeWarning, setScopeWarning] = React.useState(false)
   const intl = useIntl()
+
+  // Component-specific tracker with default GitEvent type
+  const trackMatomoEvent = <T extends MatomoEvent = GitEvent>(event: T) => {
+    baseTrackEvent?.<T>(event)
+  }
 
   useEffect(() => {
     refresh()
@@ -45,7 +52,12 @@ export const GitHubCredentials = () => {
   }
 
   async function saveGithubToken() {
-    await sendToMatomo(gitMatomoEventTypes.SAVEMANUALGITHUBCREDENTIALS)
+    trackMatomoEvent({
+      category: 'git',
+      action: 'SAVE_MANUAL_GITHUB_CREDENTIALS',
+      name: 'SAVE_BUTTON',
+      isClick: true
+    })
     await pluginactions.saveGitHubCredentials({
       username: githubUsername,
       email: githubEmail,
@@ -74,18 +86,18 @@ export const GitHubCredentials = () => {
 
   return (
     <>
-      <label className="text-uppercase">Enter GitHub credentials manually</label>
+      <label className="text-uppercase"><FormattedMessage id="gitui.enterGitHubCredentialsManually" /></label>
       <br></br>
 
-      <label>Git username&nbsp;<small>(required)</small></label>
-      <input data-id='gitubUsername' name='githubUsername' onChange={e => handleChangeUserNameState(e.target.value)} value={githubUsername} className="form-control mb-3" placeholder="* Git username" type="text" id="githubUsername" />
-      <label>Git email&nbsp;<small>(required)</small></label>
-      <input data-id='githubEmail' name='githubEmail' onChange={e => handleChangeEmailState(e.target.value)} value={githubEmail} className="form-control mb-3" placeholder="* Git email" type="text" id="githubEmail" />
-      <label>GitHub token&nbsp;<small>(optional)</small></label>
+      <label><FormattedMessage id="gitui.gitUsernameLabel" />&nbsp;<small>(<FormattedMessage id="gitui.gitUsernameRequired" />)</small></label>
+      <input data-id='gitubUsername' name='githubUsername' onChange={e => handleChangeUserNameState(e.target.value)} value={githubUsername} className="form-control mb-3" placeholder={intl.formatMessage({ id: 'gitui.gitUsernamePlaceholder' })} type="text" id="githubUsername" />
+      <label><FormattedMessage id="gitui.gitEmailLabel" />&nbsp;<small>(<FormattedMessage id="gitui.gitUsernameRequired" />)</small></label>
+      <input data-id='githubEmail' name='githubEmail' onChange={e => handleChangeEmailState(e.target.value)} value={githubEmail} className="form-control mb-3" placeholder={intl.formatMessage({ id: 'gitui.gitEmailPlaceholder' })} type="text" id="githubEmail" />
+      <label><FormattedMessage id="gitui.gitHubTokenLabel" />&nbsp;<small>(<FormattedMessage id="gitui.gitUsernameOptional" />)</small></label>
       <div className="input-group text-secondary mb-3 h6">
-        <input data-id='githubToken' type="password" autoComplete="off" value={githubToken} placeholder="GitHub token" className="form-control" name='githubToken' onChange={e => handleChangeTokenState(e.target.value)} />
+        <input data-id='githubToken' type="password" autoComplete="off" value={githubToken} placeholder={intl.formatMessage({ id: 'gitui.gitHubTokenPlaceholder' })} className="form-control" name='githubToken' onChange={e => handleChangeTokenState(e.target.value)} />
         <div className="input-group-append">
-          <CopyToClipboard content={githubToken} data-id='copyToClipboardCopyIcon' className='far fa-copy ml-1 p-2 mt-1' direction={"top"} />
+          <CopyToClipboard content={githubToken} data-id='copyToClipboardCopyIcon' className='far fa-copy ms-1 p-2 mt-1' direction={"top"} />
         </div>
       </div>
       <div className="d-flex justify-content-between">
@@ -96,7 +108,7 @@ export const GitHubCredentials = () => {
         </button>
       </div>
       {scopeWarning ?
-        <div className="text-warning">Your GitHub token may or may not have the correct permissions. Remix can't verify the permissions when using your own token. Please use the login with GitHub feature.</div> : null}
+        <div className="text-warning"><FormattedMessage id="gitui.tokenScopeWarning" /></div> : null}
       <hr />
     </>
   );

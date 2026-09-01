@@ -115,9 +115,9 @@ export const loadTypes = async (monaco) => {
   monaco.languages.typescript.typescriptDefaults.addExtraLib(ethersSha2Default, `file:///node_modules/@types/@ethersproject_sha2/index.d.ts`)
 
   // @ts-ignore
-  const ethersSingningkey = await import('raw-loader!@ethersproject/signing-key/lib/index.d.ts')
-  const ethersSingningkeyDefault = ethersSingningkey.default.replace(/@ethersproject\//g, '@ethersproject_')
-  monaco.languages.typescript.typescriptDefaults.addExtraLib(ethersSingningkeyDefault, `file:///node_modules/@types/@ethersproject_signing-key/index.d.ts`)
+  const ethersSigningkey = await import('raw-loader!@ethersproject/signing-key/lib/index.d.ts')
+  const ethersSigningkeyDefault = ethersSigningkey.default.replace(/@ethersproject\//g, '@ethersproject_')
+  monaco.languages.typescript.typescriptDefaults.addExtraLib(ethersSigningkeyDefault, `file:///node_modules/@types/@ethersproject_signing-key/index.d.ts`)
 
   // @ts-ignore
   const ethersSolidity = await import('raw-loader!@ethersproject/solidity/lib/index.d.ts')
@@ -155,17 +155,13 @@ export const loadTypes = async (monaco) => {
   monaco.languages.typescript.typescriptDefaults.addExtraLib(ethersWordlistsDefault, `file:///node_modules/@types/@ethersproject_wordlists/index.d.ts`)
 
   // @ts-ignore
-  const versionEthers = await import('raw-loader!ethers/lib/_version.d.ts')
+  /*
+  const versionEthers = await import('raw-loader!ethers/lib.esm/_version.d.ts')
   const versionEthersDefault = versionEthers.default.replace(/@ethersproject\//g, '@ethersproject_')
   monaco.languages.typescript.typescriptDefaults.addExtraLib(versionEthersDefault, `file:///node_modules/@types/_version-ethers-lib/index.d.ts`)
 
   // @ts-ignore
-  const utilEthers = await import('raw-loader!ethers/lib/utils.d.ts')
-  const utilEthersDefault = utilEthers.default.replace(/@ethersproject\//g, '@ethersproject_')
-  monaco.languages.typescript.typescriptDefaults.addExtraLib(utilEthersDefault, `file:///node_modules/@types/utils-ethers-lib/index.d.ts`)
-
-  // @ts-ignore
-  const ethers = await import('raw-loader!ethers/lib/ethers.d.ts')
+  const ethers = await import('raw-loader!ethers/lib.esm/ethers.d.ts')
   let ethersDefault = ethers.default
   ethersDefault = ethersDefault.replace(/.\/utils/g, 'utils-ethers-lib')
   ethersDefault = ethersDefault.replace(/.\/_version/g, '_version-ethers-lib')
@@ -175,41 +171,12 @@ export const loadTypes = async (monaco) => {
   monaco.languages.typescript.typescriptDefaults.addExtraLib(ethersDefault, `file:///node_modules/@types/ethers-lib/index.d.ts`)
 
   // @ts-ignore
-  const indexEthers = await import('raw-loader!ethers/lib/index.d.ts')
+  const indexEthers = await import('raw-loader!ethers/lib.esm/index.d.ts')
   let indexEthersDefault = indexEthers.default
   indexEthersDefault = indexEthersDefault.replace(/.\/ethers/g, 'ethers-lib')
   indexEthersDefault = indexEthersDefault.replace(/@ethersproject\//g, '@ethersproject_')
   monaco.languages.typescript.typescriptDefaults.addExtraLib(indexEthersDefault, `file:///node_modules/@types/ethers/index.d.ts`)
-
-  // Web3
-
-  // @ts-ignore
-  const indexWeb3 = await import('raw-loader!web3')
-  monaco.languages.typescript.typescriptDefaults.addExtraLib(indexWeb3.default, `file:///node_modules/web3/lib/types/index.d.ts`)
-
-  // @ts-ignore
-  const indexWeb3Core = await import('raw-loader!web3-core')
-  monaco.languages.typescript.typescriptDefaults.addExtraLib(indexWeb3Core.default, `file:///node_modules/web3-core/lib/types/index.d.ts`)
-
-  // @ts-ignore
-  const indexWeb3Eth = await import('raw-loader!web3-eth')
-  monaco.languages.typescript.typescriptDefaults.addExtraLib(indexWeb3Eth.default, `file:///node_modules/web3-eth/lib/types/index.d.ts`)
-
-  // @ts-ignore
-  const indexWeb3Personal = await import('raw-loader!web3-eth-personal')
-  monaco.languages.typescript.typescriptDefaults.addExtraLib(indexWeb3Personal.default, `file:///node_modules/web3-eth-personal/lib/types/index.d.ts`)
-
-  // @ts-ignore
-  const indexWeb3Contract = await import('raw-loader!web3-eth-contract')
-  monaco.languages.typescript.typescriptDefaults.addExtraLib(indexWeb3Contract.default, `file:///node_modules/web3-eth-contract/lib/types/index.d.ts`)
-
-  // @ts-ignore
-  const indexWeb3Net = await import('raw-loader!web3-net')
-  monaco.languages.typescript.typescriptDefaults.addExtraLib(indexWeb3Net.default, `file:///node_modules/web3-net/lib/types/index.d.ts`)
-
-  // @ts-ignore
-  const indexWeb3Util = await import('raw-loader!web3-utils')
-  monaco.languages.typescript.typescriptDefaults.addExtraLib(indexWeb3Util.default, `file:///node_modules/web3-utils/lib/types/index.d.ts`)
+  */
   // remix
   const indexRemixApi = remixTypes + `\n
     declare global {

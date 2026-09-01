@@ -1,20 +1,20 @@
 'use strict'
-import { RunBlockResult, RunTxResult } from '@ethereumjs/vm'
+import { RunBlockResult, RunTxResult, runBlock, runTx } from '@ethereumjs/vm'
+import type { VM } from '@ethereumjs/vm'
 import { ConsensusType } from '@ethereumjs/common'
-import { LegacyTransaction, FeeMarketEIP1559Transaction } from '@ethereumjs/tx'
-import { Block } from '@ethereumjs/block'
-import { bytesToHex, Address, hexToBytes } from '@ethereumjs/util'
-import { EVM } from '@ethereumjs/evm'
-import type { Account, AddressLike, BigIntLike } from '@ethereumjs/util'
+import { LegacyTx, createLegacyTx, createFeeMarket1559Tx, createEOACode7702Tx, createLegacyTxFromRLP, createFeeMarket1559TxFromRLP } from '@ethereumjs/tx'
+import { Block, createBlock, createBlockFromRLP } from '@ethereumjs/block'
+import { bytesToHex, hexToBytes, createAddressFromString } from '@ethereumjs/util'
+import type { AddressLike, BigIntLike, PrefixedHexString } from '@ethereumjs/util'
 import { EventManager } from '../eventManager'
 import { LogsManager } from './logsManager'
-import type { Transaction as InternalTransaction } from './txRunner'
+import type { Transaction as InternalTransaction } from '../index'
 
 export type VMexecutionResult = {
   result: RunTxResult,
   transactionHash: string
   block: Block,
-  tx: LegacyTransaction
+  tx: LegacyTx
 }
 
 export type VMExecutionCallBack = (error: string | Error, result?: VMexecutionResult) => void
@@ -24,13 +24,14 @@ export class TxRunnerVM {
   blockNumber
   pendingTxs
   vmaccounts
-  queusTxs
+  queueTxs
   blocks: Uint8Array[]
   logsManager
   commonContext
   blockParentHash
   nextNonceForCall: number
   standaloneTx: boolean
+  baseBlockNumber: string
   getVMObject: () => any
 
   constructor (vmaccounts, api, getVMObject, blocks: Uint8Array[] = []) {
@@ -39,9 +40,10 @@ export class TxRunnerVM {
     // has a default for now for backwards compatibility
     this.getVMObject = getVMObject
     this.commonContext = this.getVMObject().common
+    this.baseBlockNumber = this.getVMObject().baseBlockNumber
     this.pendingTxs = {}
     this.vmaccounts = vmaccounts
-    this.queusTxs = []
+    this.queueTxs = []
     /*
       txHash is generated using the nonce,
       in order to have unique transaction hash, we need to keep using different nonce (in case of a call)
@@ -52,7 +54,7 @@ export class TxRunnerVM {
 
     const vm = this.getVMObject().vm
     if (Array.isArray(blocks) && (blocks || []).length > 0) {
-      const lastBlock = Block.fromRLPSerializedBlock(blocks[blocks.length - 1], { common: this.commonContext })
+      const lastBlock = createBlockFromRLP(blocks[blocks.length - 1], { common: this.commonContext })
 
       this.blockParentHash = lastBlock.hash()
       this.blocks = blocks
@@ -63,11 +65,6 @@ export class TxRunnerVM {
   }
 
   execute (args: InternalTransaction, confirmationCb, gasEstimationForceSend, promptCb, callback: VMExecutionCallBack) {
-    let data = args.data
-    if (data.slice(0, 2) !== '0x') {
-      data = '0x' + data
-    }
-
     try {
       this.runInVm(args, callback)
     } catch (e) {
@@ -75,8 +72,35 @@ export class TxRunnerVM {
     }
   }
 
+  runEmptyBlock (callback: VMExecutionCallBack) {
+    const EIP1559 = this.commonContext.hardfork() !== 'berlin' // berlin is the only pre eip1559 fork that we handle.
+    const coinbases = ['0x0e9281e9c6a0808672eaba6bd1220e144c9bb07a', '0x8945a1288dc78a6d8952a92c77aee6730b414778', '0x94d76e24f818426ae84aa404140e8d5f60e10e7e'] as AddressLike[]
+    const difficulties = [69762765929000, 70762765929000, 71762765929000]
+    const difficulty = this.commonContext.consensusType() === ConsensusType.ProofOfStake ? 0 : difficulties[this.blocks.length % difficulties.length]
+    const block = createBlock({
+      header: {
+        timestamp: new Date().getTime() / 1000 | 0,
+        number: this.blocks.length,
+        coinbase: coinbases[this.blocks.length % coinbases.length],
+        difficulty,
+        gasLimit: 0,
+        baseFeePerGas: EIP1559 ? '0x1' : undefined,
+        parentHash: this.blockParentHash
+      }
+    }, { common: this.commonContext })
+
+    this.blockParentHash = block.hash()
+    this.runBlockInVm(null, block, async (err, result) => {
+      if (!err) {
+        this.getVMObject().vm.blockchain.putBlock(block)
+        this.blocks.push(block.serialize())
+      }
+      callback(err, result)
+    })
+  }
+
   async runInVm (tx: InternalTransaction, callback: VMExecutionCallBack) {
-    const { to, data, value, gasLimit, useCall, signed } = tx
+    const { to, data, value, gasLimit, useCall, signed, authorizationList } = tx
     let { from } = tx
     let account
 
@@ -84,10 +108,30 @@ export class TxRunnerVM {
       const EIP1559 = this.commonContext.hardfork() !== 'berlin' // berlin is the only pre eip1559 fork that we handle.
       let tx
       if (signed) {
-        if (!EIP1559) {
-          tx = LegacyTransaction.fromSerializedTx(hexToBytes(data), { common: this.commonContext })
+        const txData = hexToBytes(data as PrefixedHexString)
+        // Check the actual transaction type from the serialized data
+        // Legacy transactions start with 0xf8 or higher (RLP list encoding)
+        // EIP-1559 transactions start with 0x02 (transaction type byte)
+        const txType = txData[0]
+
+        if (txType <= 0x7f) {
+          // Typed transaction (EIP-2718): first byte is the transaction type
+          if (txType === 0x02) {
+            // EIP-1559 transaction
+            // Don't pass common - let it derive chain ID from the signed transaction
+            tx = createFeeMarket1559TxFromRLP(txData)
+          } else {
+            // For other transaction types, try to parse as EIP-1559 first, then fall back to legacy
+            try {
+              tx = createFeeMarket1559TxFromRLP(txData)
+            } catch (e) {
+              tx = createLegacyTxFromRLP(txData)
+            }
+          }
         } else {
-          tx = FeeMarketEIP1559Transaction.fromSerializedTx(hexToBytes(data), { common: this.commonContext })
+          // Legacy transaction (RLP-encoded, starts with 0xc0 or higher for a list)
+          // Don't pass common - let it derive chain ID from the signed transaction
+          tx = createLegacyTxFromRLP(txData)
         }
       }
       else {
@@ -100,38 +144,50 @@ export class TxRunnerVM {
           return callback('Invalid account selected')
         }
 
-        const res = await this.getVMObject().stateManager.getAccount(Address.fromString(from))
-        if (!EIP1559) {
-          tx = LegacyTransaction.fromTxData({
-            nonce: useCall ? this.nextNonceForCall : res.nonce,
-            gasPrice: '0x1',
-            gasLimit: gasLimit,
-            to: (to as AddressLike),
-            value: (value as BigIntLike),
-            data: hexToBytes(data)
-          }, { common: this.commonContext }).sign(account.privateKey)
-        } else {
-          tx = FeeMarketEIP1559Transaction.fromTxData({
+        const res = await this.getVMObject().stateManager.getAccount(createAddressFromString(from))
+        if (authorizationList) {
+          tx = createEOACode7702Tx({
             nonce: useCall ? this.nextNonceForCall : res.nonce,
             maxPriorityFeePerGas: '0x01',
             maxFeePerGas: '0x7',
             gasLimit: gasLimit,
             to: (to as AddressLike),
             value: (value as BigIntLike),
-            data: hexToBytes(data)
-          }).sign(account.privateKey)
+            data: hexToBytes(data as PrefixedHexString),
+            authorizationList: authorizationList
+          }, { common: this.commonContext }).sign(account.privateKey)
+        } else if (!EIP1559) {
+          tx = createLegacyTx({
+            nonce: useCall ? this.nextNonceForCall : res.nonce,
+            gasPrice: '0x1',
+            gasLimit: gasLimit,
+            to: (to as AddressLike),
+            value: (value as BigIntLike),
+            data: hexToBytes(data as PrefixedHexString)
+          }, { common: this.commonContext }).sign(account.privateKey)
+        } else {
+          tx = createFeeMarket1559Tx({
+            nonce: useCall ? this.nextNonceForCall : res.nonce,
+            maxPriorityFeePerGas: '0x01',
+            maxFeePerGas: '0x7',
+            gasLimit: gasLimit,
+            to: (to as AddressLike),
+            value: (value as BigIntLike),
+            data: hexToBytes(data as PrefixedHexString)
+          }, { common: this.commonContext }).sign(account.privateKey)
         }
       }
 
       if (useCall) this.nextNonceForCall++
 
-      const coinbases = ['0x0e9281e9c6a0808672eaba6bd1220e144c9bb07a', '0x8945a1288dc78a6d8952a92c77aee6730b414778', '0x94d76e24f818426ae84aa404140e8d5f60e10e7e']
+      const coinbases = ['0x0e9281e9c6a0808672eaba6bd1220e144c9bb07a', '0x8945a1288dc78a6d8952a92c77aee6730b414778', '0x94d76e24f818426ae84aa404140e8d5f60e10e7e'] as AddressLike[]
       const difficulties = [69762765929000, 70762765929000, 71762765929000]
       const difficulty = this.commonContext.consensusType() === ConsensusType.ProofOfStake ? 0 : difficulties[this.blocks.length % difficulties.length]
-      const block = Block.fromBlockData({
+      const blockNumber = this.baseBlockNumber ? parseInt(this.baseBlockNumber) + this.blocks.length : this.blocks.length
+      const block = createBlock({
         header: {
           timestamp: new Date().getTime() / 1000 | 0,
-          number: this.blocks.length,
+          number: blockNumber,
           coinbase: coinbases[this.blocks.length % coinbases.length],
           difficulty,
           gasLimit,
@@ -166,10 +222,11 @@ export class TxRunnerVM {
   }
 
   runTxInVm (tx, block, callback) {
-    this.getVMObject().vm.runTx({ tx, skipNonce: true, skipBlockValidation: true, skipBalance: false }).then((result: RunTxResult) => {
+    const vm: VM = this.getVMObject().vm
+    runTx(vm, { tx, skipNonce: true, skipBalance: false }).then((result: RunTxResult) => {
       callback(null, {
         result,
-        transactionHash: bytesToHex(Buffer.from(tx.hash())),
+        transactionHash: bytesToHex((tx.hash())),
         block,
         tx
       })
@@ -179,11 +236,12 @@ export class TxRunnerVM {
   }
 
   runBlockInVm (tx, block, callback) {
-    this.getVMObject().vm.runBlock({ block: block, generate: true, skipNonce: true, skipBlockValidation: true, skipBalance: false }).then((results: RunBlockResult) => {
+    const vm: VM = this.getVMObject().vm
+    runBlock(vm, { block: block, generate: true, skipHeaderValidation: true, skipNonce: true, skipBlockValidation: true, skipBalance: false }).then((results: RunBlockResult) => {
       const result: RunTxResult = results.results[0]
       callback(null, {
         result,
-        transactionHash: bytesToHex(Buffer.from(tx.hash())),
+        transactionHash: tx ? bytesToHex(tx.hash()) : null,
         block,
         tx
       })

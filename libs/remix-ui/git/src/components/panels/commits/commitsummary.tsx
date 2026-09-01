@@ -7,6 +7,7 @@ import { branch, remote } from "@remix-ui/git";
 import GitUIButton from "../../buttons/gituibutton";
 import { gitPluginContext } from "../../gitui";
 import { removeGitFromUrl } from "../../../utils";
+import { useIntl } from "react-intl";
 
 export interface CommitSummaryProps {
   commit: ReadCommitResult;
@@ -18,6 +19,7 @@ export interface CommitSummaryProps {
 export const CommitSummary = (props: CommitSummaryProps) => {
   const { commit, checkout, isAheadOfRepo, branch } = props;
   const context = React.useContext(gitPluginContext)
+  const intl = useIntl()
 
   const getDate = (commit: ReadCommitResult) => {
     const timestamp = commit.commit.author.timestamp;
@@ -61,12 +63,12 @@ export const CommitSummary = (props: CommitSummaryProps) => {
 
   return (
     <>
-      <div data-type='commit-summary' data-id={`commit-summary-${removeLineBreaks(commit.commit.message)}-${isAheadOfRepo ? 'ahead' : ''}`} className="long-and-truncated ml-2">
+      <div data-type='commit-summary' data-id={`commit-summary-${removeLineBreaks(commit.commit.message)}-${isAheadOfRepo ? 'ahead' : ''}`} className="long-and-truncated ms-2">
         {commit.commit.message}
       </div>
       {commit.commit.author.name || ""}
-      <span className="ml-1">{getDate(commit)}</span>
-      {getRemote() && getRemote()?.url && !isAheadOfRepo && <GitUIButton tooltip="open on remote" className="btn btn-sm p-0 text-muted ml-1" onClick={() => openRemote()}><FontAwesomeIcon icon={faGlobe} ></FontAwesomeIcon></GitUIButton>}
+      <span className="ms-1">{getDate(commit)}</span>
+      {getRemote() && getRemote()?.url && !isAheadOfRepo && <GitUIButton tooltip={intl.formatMessage({ id: 'gitui.openOnRemote' })} className="btn btn-sm p-0 text-muted ms-1" onClick={() => openRemote()}><FontAwesomeIcon icon={faGlobe} ></FontAwesomeIcon></GitUIButton>}
     </>
   )
 }

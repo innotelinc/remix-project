@@ -3,6 +3,8 @@ import { FormattedMessage } from "react-intl"
 import { generateProof } from "../actions"
 import { CircuitAppContext } from "../contexts"
 import { useContext } from "react"
+import { ZkVerifyButton } from "./zkVerifyButton"
+import { CreateZkDappButton } from "./createZkDappButton"
 
 export function GenerateProof () {
   const circuitApp = useContext(CircuitAppContext)
@@ -10,16 +12,15 @@ export function GenerateProof () {
 
   return (
     <div className="flex-column d-flex">
-      <div className="mt-2 custom-control custom-checkbox">
+      <div className="mt-2 form-check">
         <input
-          className="custom-control-input"
+          className="form-check-input"
           type="checkbox"
-          title="Export Verifier Calldata"
           id="circuitExportVerifierCalldata"
           onChange={() => circuitApp.dispatch({ type: 'SET_EXPORT_VERIFIER_CALLDATA', payload: !circuitApp.appState.exportVerifierCalldata })}
           checked={circuitApp.appState.exportVerifierCalldata}
         />
-        <label className="form-check-label custom-control-label pt-1" htmlFor="circuitExportVerifierCalldata">
+        <label className="form-check-label" htmlFor="circuitExportVerifierCalldata">
           <FormattedMessage id="circuit.exportVerifierCalldata" />
         </label>
       </div>
@@ -27,13 +28,15 @@ export function GenerateProof () {
         className="btn btn-secondary btn-block d-block w-100 text-break mb-1 mt-1"
         onClick={() => generateProof(circuitApp.plugin, circuitApp.appState, circuitApp.dispatch)}
         disabled={(status === "compiling") || (status === "computing") || (status === "proving") || (status === "exporting")}
-        data-id="compute_witness_btn"
+        data-id="generateProofBtn"
       >
         <RenderIf condition={status === 'proving'}>
-          <i className="fas fa-sync fa-spin mr-2" aria-hidden="true"></i>
+          <i className="fas fa-sync fa-spin me-2" aria-hidden="true"></i>
         </RenderIf>
         <FormattedMessage id="circuit.generateProof" />
       </button>
+      <ZkVerifyButton />
+      <CreateZkDappButton />
     </div>
   )
 }

@@ -19,16 +19,18 @@ module.exports = {
     },
     'Should load the test file #group1': function (browser: NightwatchBrowser) {
         browser.openFile('contracts')
-            .openFile('contracts/3_Ballot.sol')
-            .waitForElementVisible('#editorView')
-            .setEditorValue(BallotWithARefToOwner)
-            .pause(4000) // wait for the compiler to finish
+            .addFile('contracts/3_BallotHover.sol', {
+                content: BallotWithARefToOwner
+            })
             .scrollToLine(37)
+            .useXpath().waitForElementVisible("//*[@class='view-line' and contains(.,'gas')]")
+
     },
     'Should show hover over contract in editor #group1': function (browser: NightwatchBrowser) {
-        const path = "//*[contains(text(),'BallotHoverTest')]"
-        checkEditorHoverContent(browser, path, 'contract BallotHoverTest is BallotHoverTest')
-        checkEditorHoverContent(browser, path, 'contracts/3_Ballot.sol 10:0')
+        browser.scrollToLine(10)
+        const path = "//*[@class='view-line' and contains(.,'contract') and contains(.,'BallotHoverTest')]//span//span[contains(.,'BallotHoverTest')]"
+        checkEditorHoverContent(browser, path, 'contract BallotHoverTest')
+        checkEditorHoverContent(browser, path, 'contracts/3_BallotHover.sol 10:0')
         checkEditorHoverContent(browser, path, '@title Ballot')
     },
     'Should show hover over var definition in editor #group1': function (browser: NightwatchBrowser) {
@@ -88,23 +90,27 @@ module.exports = {
     },
     'Add token file #group1': function (browser: NightwatchBrowser) {
         browser
-        .clickLaunchIcon('solidity')
-        .setSolidityCompilerVersion('soljson-v0.8.20+commit.a1b79de6.js')
-        .click('*[data-id="scConfigExpander"]')
-        .setValue('#evmVersionSelector', 'berlin') // set target EVM for parser to berlin
-        .addFile('contracts/mytoken.sol', {
-            content: myToken
-        }).useXpath().waitForElementVisible("//*[@class='view-line' and contains(.,'gas')]")
+            .clickLaunchIcon('solidity')
+            .setSolidityCompilerVersion('soljson-v0.8.20+commit.a1b79de6.js')
+            .click('*[data-id="scConfigExpander"]')
+            .setValue('#evmVersionSelector', 'berlin') // set target EVM for parser to berlin
+            .addFile('contracts/mytoken.sol', {
+                content: myToken
+            }).useXpath().waitForElementVisible("//*[@class='view-line' and contains(.,'gas')]")
     },
     // here we change quickly between files to test the files being parsed correctly when switching between them
     'Should show ERC20 hover over contract in editor #group1': function (browser: NightwatchBrowser) {
-        browser.scrollToLine(10)
+        browser.scrollToLine(11)
         const path = "//*[@class='view-line' and contains(.,'MyToken') and contains(.,'Pausable')]//span//span[contains(.,'ERC20Burnable')]"
         const expectedContent = 'contract ERC20Burnable is ERC20Burnable, ERC20, IERC20Errors, IERC20Metadata, IERC20, Context'
         checkEditorHoverContent(browser, path, expectedContent, 25)
     },
-    'Go back to ballot file': function (browser: NightwatchBrowser) {
-        browser.openFile('contracts/3_Ballot.sol')
+    'Go back to ballot file #group1': function (browser: NightwatchBrowser) {
+        browser
+            .waitForElementVisible('*[data-id="treeViewDivDraggableItem.deps"]')
+            .click('*[data-id="treeViewDivDraggableItem.deps"]')
+            .openFile('contracts/3_BallotHover.sol')
+            .scrollToLine(37)
             .useXpath().waitForElementVisible("//*[@class='view-line' and contains(.,'gas')]")
     },
     'Should show hover over function in editor again #group1': function (browser: NightwatchBrowser) {
@@ -282,12 +288,13 @@ contract BallotHoverTest {
 const myToken = `
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
-
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+// Berlin EVM doesn't support mcopy (requires Cancun)
+// OZ v5.2.0 added Bytes.sol with mcopy instruction
+import "@openzeppelin/contracts@5.0.0/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts@5.0.0/token/ERC20/extensions/ERC20Burnable.sol";
+import "@openzeppelin/contracts@5.0.0/token/ERC20/extensions/ERC20Pausable.sol";
+import "@openzeppelin/contracts@5.0.0/access/Ownable.sol";
+import "@openzeppelin/contracts@5.0.0/token/ERC20/extensions/ERC20Permit.sol";
 
 contract MyToken is ERC20, ERC20Burnable, ERC20Pausable, Ownable, ERC20Permit {
     constructor(address initialOwner)

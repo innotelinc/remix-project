@@ -1,4 +1,4 @@
-import { Placement } from 'react-bootstrap/esm/Overlay'
+import { Placement } from 'react-bootstrap/esm/types'
 import { OverlayDelay, OverlayTriggerRenderProps } from 'react-bootstrap/esm/OverlayTrigger'
 
 export type CustomTooltipType = {
@@ -10,4 +10,5 @@ export type CustomTooltipType = {
   tooltipTextClasses?: string
   delay?: OverlayDelay
   hide?: boolean
+  show?: boolean
 }

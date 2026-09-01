@@ -6,18 +6,19 @@ import { QueryParams } from '@remix-project/remix-lib'
 const profile: Profile = {
   name: 'layout',
   description: 'layout',
-  methods: ['minimize', 'maximiseSidePanel', 'resetSidePanel', 'maximizeTerminal', 'maximisePinnedPanel', 'resetPinnedPanel']
+  methods: ['minimize', 'minimizeSidePanel', 'maximiseSidePanel', 'resetSidePanel', 'maximizeTerminal', 'maximiseRightSidePanel', 'resetRightSidePanel']
 }
 
 interface panelState {
   active: boolean
   plugin: Plugin
-  minimized: boolean
+  minimized?: boolean
 }
 interface panels {
   tabs: panelState
   editor: panelState
   main: panelState
+  bottomBar: panelState
   terminal: panelState
 }
 
@@ -29,17 +30,43 @@ export type PanelConfiguration = {
 
 export class Layout extends Plugin {
   event: any
+  // @ts-ignore
   panels: panels
-  enhanced: { [key: string]: boolean }
-  maximized: { [key: string]: boolean }
+  enhanced: { [key: string]: boolean | { coeff?: number } }
+  maximized: { [key: string]: {
+    maximized: boolean
+    coeff?: number
+  } }
   constructor () {
     super(profile)
-    this.maximized = {}
+    this.maximized = {
+      'remixaiassistant': {
+        maximized: true,
+        coeff: undefined
+      },
+      'LearnEth': {
+        maximized: true,
+        coeff: undefined
+      },
+    }
     this.enhanced = {
       'dgit': true,
-      'LearnEth': true
+      'remixaiassistant': true,
+      'quick-dapp-v2': true,
+      'udapp': true
     }
     this.event = new EventEmitter()
+  }
+
+  private isEnhancedPanel(name: string) {
+    return Boolean(this.enhanced[name])
+  }
+
+  private getEnhancedCoeff(name: string, defaultCoeff = 0.25) {
+    const config = this.enhanced[name]
+    if (!config) return undefined
+    if (typeof config === 'object' && typeof config.coeff === 'number') return config.coeff
+    return defaultCoeff
   }
 
   async onActivation (): Promise<void> {
@@ -58,11 +85,16 @@ export class Layout extends Plugin {
       this.panels.main.active = false
       this.event.emit('change', null)
     })
-    this.on('tabs', 'switchApp', (name: string) => {
-      this.call('mainPanel', 'showContent', name)
-      this.panels.editor.active = false
-      this.panels.main.active = true
-      this.event.emit('change', null)
+    this.on('tabs', 'switchApp', async (name: string) => {
+      // 'switchApp' fires for every tab switch, including file tabs, but showContent
+      // only knows about plugins rendered in mainPanel (e.g. quick-dapp). Skip anything else.
+      const targetProfile = await this.call('manager', 'getProfile', name)
+      if (targetProfile && targetProfile.location === 'mainPanel') {
+        this.call('mainPanel', 'showContent', name)
+        this.panels.editor.active = false
+        this.panels.main.active = true
+        this.event.emit('change', null)
+      }
     })
     this.on('tabs', 'closeApp', (name: string) => {
       this.panels.editor.active = true
@@ -81,33 +113,53 @@ export class Layout extends Plugin {
         break
       }
     })
-    this.on('sidePanel', 'focusChanged', async (name) => {
+    this.on('sidePanel', 'focusChanged', async (name: any) => {
       const current = await this.call('sidePanel', 'currentFocus')
-      if (this.enhanced[current]) {
-        this.event.emit('enhancesidepanel')
+      const isMaxed = await this.call('rightSidePanel', 'isRightSidePanelMaximized')
+      if (isMaxed) {
+        this.enhanced[current] = false
+      } else {
+        if (this.isEnhancedPanel(current)) {
+          this.event.emit('enhancesidepanel', this.getEnhancedCoeff(current))
+        }
       }
 
-      if (this.maximized[current]) {
-        this.event.emit('maximisesidepanel')
+      if (this.maximized[current] && this.maximized[current].maximized) {
+        this.event.emit('maximisesidepanel', this.maximized[current].coeff)
       }
 
-      if (!this.enhanced[current] && !this.maximized[current]) {
+      if (!this.enhanced[current] && (!this.maximized[current] || !this.maximized[current].maximized)) {
         this.event.emit('resetsidepanel')
       }
     })
 
-    this.on('pinnedPanel', 'pinnedPlugin', async (name) => {
-      const current = await this.call('pinnedPanel', 'currentFocus')
-      if (this.enhanced[current]) {
-        this.event.emit('enhancepinnedpanel')
+    this.on('rightSidePanel', 'pinnedPlugin', async (name: any) => {
+      const current = await this.call('rightSidePanel', 'currentFocus')
+      if (this.isEnhancedPanel(current)) {
+        this.event.emit('enhanceRightSidePanel', this.getEnhancedCoeff(current))
       }
 
-      if (this.maximized[current]) {
-        this.event.emit('maximisepinnedpanel')
+      if (this.maximized[current] && this.maximized[current].maximized) {
+        this.event.emit('maximiseRightSidePanel', this.maximized[current].coeff)
       }
 
-      if (!this.enhanced[current] && !this.maximized[current]) {
-        this.event.emit('resetpinnedpanel')
+      if (!this.enhanced[current] && (!this.maximized[current] || !this.maximized[current].maximized)) {
+        this.event.emit('resetRightSidePanel')
+      }
+    })
+
+    this.on('rightSidePanel', 'rightSidePanelShown', async () => {
+      const current = await this.call('rightSidePanel', 'currentFocus')
+      if (this.isEnhancedPanel(current)) {
+        this.event.emit('enhanceRightSidePanel', this.getEnhancedCoeff(current))
+      }
+
+      if (this.maximized[current] && this.maximized[current].maximized) {
+        this.event.emit('maximiseRightSidePanel', this.maximized[current].coeff)
+      }
+
+      if (!this.enhanced[current] && (!this.maximized[current] || !this.maximized[current].maximized)) {
+        this.event.emit('resetRightSidePanel')
       }
     })
 
@@ -136,21 +188,32 @@ export class Layout extends Plugin {
   }
 
   minimize (name: string, minimized:boolean): void {
+    // @ts-ignore
     this.panels[name].minimized = minimized
     this.event.emit('change', this.panels)
     this.emit('change', this.panels)
   }
 
-  async maximiseSidePanel () {
-    const current = await this.call('sidePanel', 'currentFocus')
-    this.maximized[current] = true
-    this.event.emit('maximisesidepanel')
+  async minimizeSidePanel () {
+    this.event.emit('minimizesidepanel')
   }
 
-  async maximisePinnedPanel () {
-    const current = await this.call('pinnedPanel', 'currentFocus')
-    this.maximized[current] = true
-    this.event.emit('maximisepinnedpanel')
+  async maximiseSidePanel (coeff?: number) {
+    const current = await this.call('sidePanel', 'currentFocus')
+    this.maximized[current] = {
+      maximized: true,
+      coeff
+    }
+    this.event.emit('maximisesidepanel', coeff)
+  }
+
+  async maximiseRightSidePanel (coeff?: number) {
+    const current = await this.call('rightSidePanel', 'currentFocus')
+    this.maximized[current] = {
+      maximized: true,
+      coeff
+    }
+    this.event.emit('maximiseRightSidePanel', coeff)
   }
 
   async maximizeTerminal() {
@@ -165,9 +228,9 @@ export class Layout extends Plugin {
     this.event.emit('resetsidepanel')
   }
 
-  async resetPinnedPanel () {
-    const current = await this.call('pinnedPanel', 'currentFocus')
+  async resetRightSidePanel () {
+    const current = await this.call('rightSidePanel', 'currentFocus')
     this.enhanced[current] = false
-    this.event.emit('resetpinnedpanel')
+    this.event.emit('resetRightSidePanel')
   }
 }

@@ -1,11 +1,10 @@
-import {Profile} from '@remixproject/plugin-utils'
-import {ElectronBasePlugin, ElectronBasePluginClient} from '@remixproject/plugin-electron'
+import { Profile } from '@remixproject/plugin-utils'
+import { ElectronBasePlugin, ElectronBasePluginClient } from '@remixproject/plugin-electron'
 import fs from 'fs/promises'
 import git from 'isomorphic-git'
-import http from 'isomorphic-git/http/web'
-import {gitProxy} from '../tools/git'
-import {isoGit} from '@remix-git'
-import {branchDifference, branchInputType, checkoutInputType, cloneInputType, commitChange, commitInputType, compareBranchesInput, currentBranchInput, fetchInputType, initInputType, logInputType, pullInputType, pushInputType, remote, resolveRefInput, statusInput} from '@remix-api'
+import { gitProxy } from '../tools/git'
+import { isoGit } from '@remix-git'
+import { branchDifference, branchInputType, checkoutInputType, cloneInputType, commitChange, commitInputType, compareBranchesInput, currentBranchInput, fetchInputType, initInputType, logInputType, pullInputType, pushInputType, remote, resolveRefInput, statusInput } from '@remix-api'
 
 const profile: Profile = {
   name: 'isogit',
@@ -92,13 +91,18 @@ class IsoGitPluginClient extends ElectronBasePluginClient {
       return []
     }
 
-    const log = await git.log({
-      ...(await this.getGitConfig()),
-      ...cmd,
-      depth: cmd.depth || 10,
-    })
+    try {
+      const log = await git.log({
+        ...(await this.getGitConfig()),
+        ...cmd,
+        depth: cmd.depth || 10,
+      })
 
-    return log
+      return log
+    }
+    catch (e) {
+      return []
+    }
   }
 
   async add(cmd: any) {
@@ -133,8 +137,24 @@ class IsoGitPluginClient extends ElectronBasePluginClient {
     }
 
     if (this.gitIsInstalled) {
-      const status = await gitProxy.commit(this.workingDir, cmd)
-      return status
+      try {
+        const result = await gitProxy.commit(this.workingDir, cmd)
+        
+        // Send commit output to terminal
+        if (result.stdout) {
+          this.call('terminal' as any, 'log', { type: 'info', value: result.stdout })
+        }
+        
+        if (result.stderr) {
+          this.call('terminal' as any, 'log', { type: 'warn', value: result.stderr })
+        }
+        
+        this.call('terminal' as any, 'log', { type: 'info', value: `Commit successful: ${result.commitHash}` })
+        return result.commitHash
+      } catch (e) {
+        this.call('terminal' as any, 'log', { type: 'error', value: `Commit failed: ${e.message}` })
+        throw e
+      }
     }
 
     const commit = await git.commit({
@@ -176,13 +196,16 @@ class IsoGitPluginClient extends ElectronBasePluginClient {
     if (!this.workingDir || this.workingDir === '') {
       return null
     }
+    try {
+      const resolveref = await git.resolveRef({
+        ...(await this.getGitConfig()),
+        ...cmd,
+      })
 
-    const resolveref = await git.resolveRef({
-      ...(await this.getGitConfig()),
-      ...cmd,
-    })
-
-    return resolveref
+      return resolveref
+    } catch (e) {
+      return null
+    }
   }
 
   async readblob(cmd: any) {
@@ -204,7 +227,24 @@ class IsoGitPluginClient extends ElectronBasePluginClient {
       throw new Error('No working directory')
     }
     if (this.gitIsInstalled) {
-      return await gitProxy.checkout(this.workingDir, cmd)
+      try {
+        this.call('terminal' as any, 'log', `Checking out ${cmd.ref}...`)
+        const result = await gitProxy.checkout(this.workingDir, cmd)
+        
+        if (result.stdout) {
+          this.call('terminal' as any, 'log', { type: 'info', value: result.stdout })
+        }
+        
+        if (result.stderr) {
+          this.call('terminal' as any, 'log', { type: 'info', value: result.stderr })
+        }
+        
+        this.call('terminal' as any, 'log', { type: 'info', value: `Checkout to ${cmd.ref} completed successfully!` })
+        return result
+      } catch (e) {
+        this.call('terminal' as any, 'log', { type: 'error', value: `Checkout failed: ${e.message}` })
+        throw e
+      }
     } else {
       const checkout = await git.checkout({
         ...(await this.getGitConfig()),
@@ -220,7 +260,24 @@ class IsoGitPluginClient extends ElectronBasePluginClient {
     }
 
     if (this.gitIsInstalled) {
-      return await gitProxy.push(this.workingDir, input)
+      try {
+        this.call('terminal' as any, 'log', 'Pushing changes...')
+        const result = await gitProxy.push(this.workingDir, input)
+        
+        if (result.stdout) {
+          this.call('terminal' as any, 'log', { type: 'info', value: result.stdout })
+        }
+        
+        if (result.stderr) {
+          this.call('terminal' as any, 'log', { type: 'info', value: result.stderr })
+        }
+        
+        this.call('terminal' as any, 'log', { type: 'info', value: 'Push completed successfully!' })
+        return result
+      } catch (e) {
+        this.call('terminal' as any, 'log', { type: 'error', value: `Push failed: ${e.message}` })
+        throw e
+      }
     } else {
       const push = await isoGit.push(input, await this.getGitConfig(), this)
       return push
@@ -234,7 +291,24 @@ class IsoGitPluginClient extends ElectronBasePluginClient {
     }
 
     if (this.gitIsInstalled) {
-      return await gitProxy.pull(this.workingDir, input)
+      try {
+        this.call('terminal' as any, 'log', 'Pulling changes...')
+        const result = await gitProxy.pull(this.workingDir, input)
+        
+        if (result.stdout) {
+          this.call('terminal' as any, 'log', { type: 'info', value: result.stdout })
+        }
+        
+        if (result.stderr) {
+          this.call('terminal' as any, 'log', { type: 'info', value: result.stderr })
+        }
+        
+        this.call('terminal' as any, 'log', { type: 'info', value: 'Pull completed successfully!' })
+        return result
+      } catch (e) {
+        this.call('terminal' as any, 'log', { type: 'error', value: `Pull failed: ${e.message}` })
+        throw e
+      }
     } else {
       const pull = await isoGit.pull(input, await this.getGitConfig(), this)
       return pull
@@ -248,7 +322,24 @@ class IsoGitPluginClient extends ElectronBasePluginClient {
     }
 
     if (this.gitIsInstalled) {
-      await gitProxy.fetch(this.workingDir, input)
+      try {
+        this.call('terminal' as any, 'log', 'Fetching changes...')
+        const result = await gitProxy.fetch(this.workingDir, input)
+        
+        if (result.stdout) {
+          this.call('terminal' as any, 'log', { type: 'info', value: result.stdout })
+        }
+        
+        if (result.stderr) {
+          this.call('terminal' as any, 'log', { type: 'info', value: result.stderr })
+        }
+        
+        this.call('terminal' as any, 'log', { type: 'info', value: 'Fetch completed successfully!' })
+        return result
+      } catch (e) {
+        this.call('terminal' as any, 'log', { type: 'error', value: `Fetch failed: ${e.message}` })
+        throw e
+      }
     } else {
       const fetch = await isoGit.fetch(input, await this.getGitConfig(), this)
       return fetch
@@ -256,11 +347,36 @@ class IsoGitPluginClient extends ElectronBasePluginClient {
   }
 
   async clone(cmd: cloneInputType) {
+    // Only prompt for folder if not already provided
+    if (!cmd.dir) {
+      try {
+        cmd.dir = await this.call('fs' as any, 'selectFolder', null, 'Select or create a folder to clone the repository in', 'Select as Repository Destination')
+        if (!cmd.dir) {
+          throw new Error('Clone cancelled: No destination folder selected')
+        }
+      } catch (e) {
+        throw new Error('Clone cancelled: ' + e.message)
+      }
+    }
+
     if (this.gitIsInstalled) {
       try {
         this.call('terminal' as any, 'log', 'Cloning using git... please wait.')
-        await gitProxy.clone(cmd)
+        const result = await gitProxy.clone(cmd)
+
+        // Send stdout to terminal as info
+        if (result.stdout) {
+          this.call('terminal' as any, 'log', { type: 'info', value: result.stdout })
+        }
+
+        // Send stderr to terminal as warning (git often sends progress info to stderr)
+        if (result.stderr) {
+          this.call('terminal' as any, 'log', { type: 'info', value: result.stderr })
+        }
+
+        this.call('terminal' as any, 'log', { type: 'info', value: 'Clone completed successfully!' })
       } catch (e) {
+        this.call('terminal' as any, 'log', { type: 'error', value: `Clone failed: ${e.message}` })
         throw e
       }
     } else {
@@ -270,6 +386,7 @@ class IsoGitPluginClient extends ElectronBasePluginClient {
         return clone
       } catch (e) {
         console.log('CLONE ERROR', e)
+        this.call('terminal' as any, 'log', { type: 'error', value: `Clone failed: ${e.message}` })
         throw e
       }
     }
@@ -330,8 +447,8 @@ class IsoGitPluginClient extends ElectronBasePluginClient {
     return await isoGit.getCommitChanges(commitHash1, commitHash2, await this.getGitConfig())
   }
 
-  async compareBranches({branch, remote}: compareBranchesInput): Promise<branchDifference> {
-    return await isoGit.compareBranches({branch, remote}, await this.getGitConfig())
+  async compareBranches({ branch, remote }: compareBranchesInput): Promise<branchDifference> {
+    return await isoGit.compareBranches({ branch, remote }, await this.getGitConfig())
   }
 
   async updateSubmodules(input) {
@@ -342,7 +459,7 @@ class IsoGitPluginClient extends ElectronBasePluginClient {
         throw e
       }
     } else {
-      this.call('terminal', 'log', {type: 'error', value: 'Please install git into your OS to use this functionality...'})
+      this.call('terminal', 'log', { type: 'error', value: 'Please install git into your OS to use this functionality...' })
     }
   }
 }

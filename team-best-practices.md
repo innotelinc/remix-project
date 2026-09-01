@@ -2,25 +2,25 @@
 # Team best practices
 
 This document aims to address contributors best practices of the following repositories:
- - Remix Project: https://github.com/ethereum/remix-project
- - Remix Libraries: https://github.com/ethereum/remix-project/tree/master/libs
+ - Remix Project: https://github.com/remix-project-org/remix-project
+ - Remix Libraries: https://github.com/remix-project-org/remix-project/tree/master/libs
 
-This document is not in its final version, **a team meeting which aim to address new/old best practices, feedback, workflows, all kind of issues related to how the team work together occurs every 2 weeks.**
-This document link to other specialised best practices (like coding best practices).
+This document is not in its final version, **a team meeting which aims to address new/old best practices, feedback, workflows, all kind of issues related to how the team works together occurs every 2 weeks.**
+This document link to other specialized best practices (like coding best practices).
 
 Related links:
- - Public Website: https://remix-project.org
- - Awesome Remix: https://github.com/ethereum/awesome-remix
+ - Public Website: https://remix.live
+ - Awesome Remix: https://github.com/remix-project-org/awesome-remix
  - Remix basic FAQ: https://hackmd.io/KVooMJhWRImCGq6zkDgW9A
  - Remix live: https://remix.ethereum.org
- - Remix alpha live: https://remix-alpha.ethereum.org
- - Remix beta live: https://remix-beta.ethereum.org
+ - Remix alpha live: https://alpha.remix.live
+ - Remix beta live: https://beta.remix.live
  - Remix-lib NPM module: https://www.npmjs.com/package/@remix-project/remix-lib
  - Remix-solidity NPM module: https://www.npmjs.com/package/@remix-project/remix-solidity
  - Remix-debug NPM module: https://www.npmjs.com/package/@remix-project/remix-debug
  - Remix-tests NPM module: https://www.npmjs.com/package/@remix-project/remix-tests
  - Remix documentation: http://remix-ide.readthedocs.io/en/latest/
- - Discord: https://discord.gg/mh9hFCKkEq
+ - Discord: https://discord.gg/MzhfCGstNA
  
 ---
 
@@ -38,7 +38,7 @@ Related links:
 
  - A milestone standup - scheduled before the beginning of each milestone, roughly on a monthly basis - which aim to define what will be included in the **next milestone** and who will work on what. This standup also help to set a clear long term vision.
  
- - A retrospective standup - after each releases - which aim to talk about **best practices in general**: what is good, what is bad, how we can improve workflows.
+ - A retrospective standup - after each release - which aims to talk about **best practices in general**: what is good, what is bad, how we can improve workflows.
 
  - A tour standup - Just after a release or whenever it is needed - which aim to demo, **explain in details** features, bug fixes or any part of the codebase.
  
@@ -61,7 +61,7 @@ Before starting coding, we should ensure all devs / contributors are aware of:
 - How to setup and get started (always up to date).
 - How to run tests.
 - Where to find documentation.
-- How to reach us through the communication channels - https://gitter.im/ethereum/remix, https://gitter.im/ethereum/remix-dev.
+- How to reach us through the communication channels - https://discord.gg/MzhfCGstNA
 - The following best practices:
 
 ---
@@ -112,7 +112,7 @@ Before starting coding, we should ensure all devs / contributors are aware of:
  ### 3) Merge:
 
  - Merging is possible after Review and Tests are ok and when the PR is approved.
- - After a merge, it is highly recommended to check the new code in `remix-alpha.ethereum.org`
+ - After a merge, it is highly recommended to check the new code in `alpha.remix.live`
 
 ---
 
@@ -120,9 +120,9 @@ Before starting coding, we should ensure all devs / contributors are aware of:
 
  - A milestone should **only** contain items we are sure to finish.
  - The end of a milestone triggers a new release.
- - Milestone items and duration should take in account time spent in bugs fixing and support.
+ - Milestone items and duration should take into account time spent in bugs fixing and support.
  - The team should commit to the milestone duration.
- - If a dev finish early he/she can help other to push remaining tasks.
+ - If a dev finish early he/she can help others to push remaining tasks.
  - If a dev finish early he/she can work on specifying / integrating the next milestone.
  - A milestone duration is fixed at the start of the milestone (but should better not exceed 1 month).
  - Progress and issues regarding a milestone are discussed on regular standups.
@@ -184,4 +184,4 @@ Before starting coding, we should ensure all devs / contributors are aware of:
 
 # Coding best practices
 
- - https://github.com/ethereum/remix-project/blob/master/CONTRIBUTING.md
+ - https://github.com/remix-project-org/remix-project/blob/master/CONTRIBUTING.md

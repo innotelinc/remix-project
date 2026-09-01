@@ -26,7 +26,8 @@ export function FileHoverIcons(props: FileHoverIconsProps) {
                 tooltipClasses="text-nowrap"
               >
                 <span
-                  className="far fa-folder fa-1x mr-2 remixui_icons"
+                  data-id="fileExplorerHoverIcons-createNewFolder"
+                  className="far fa-folder fa-1x me-2 remixui_icons"
                   onClick={async (e) => {
                     e.stopPropagation()
                     await props.handleNewFolderOp(props.file.path)
@@ -44,7 +45,8 @@ export function FileHoverIcons(props: FileHoverIconsProps) {
                 tooltipClasses="text-nowrap"
               >
                 <span
-                  className="far fa-file fa-1x remixui_icons mr-2"
+                  data-id="fileExplorerHoverIcons-createNewFile"
+                  className="far fa-file fa-1x remixui_icons me-2"
                   onClick={async (e) => {
                     e.stopPropagation()
                     await props.handleNewFileOp(props.file.path)
@@ -65,7 +67,8 @@ export function FileHoverIcons(props: FileHoverIconsProps) {
           tooltipClasses="text-nowrap"
         >
           <span
-            className="far fa-pen fa-1x remixui_icons mr-2"
+            data-id="fileExplorerHoverIcons-rename"
+            className="far fa-pen fa-1x remixui_icons me-2"
             onClick={(e) => {
               e.stopPropagation()
               props.renamePathOp(props.file.path, props.file.type)
@@ -83,7 +86,8 @@ export function FileHoverIcons(props: FileHoverIconsProps) {
           tooltipClasses="text-nowrap"
         >
           <span
-            className="far fa-trash fa-1x remixui_icons mr-2"
+            data-id="fileExplorerHoverIcons-delete"
+            className="far fa-trash fa-1x remixui_icons me-2"
             onClick={async (e) => {
               e.stopPropagation()
               await props.deletePathOp(props.file.path)

@@ -1,10 +1,21 @@
 import { PTAU_LIST } from '../actions/constant'
 import { Actions, AppState } from '../types'
 import { compiler_list } from 'circom_wasm'
+import isElectron from 'is-electron'
+
+const VersionList = isElectron() ? { ...compiler_list.wasm_builds,
+  "latest": {
+    "name": "latest",
+    "version": "latest",
+    "repo": "",
+    "build_source": ""
+  }
+} : compiler_list.wasm_builds
 
 export const appInitialState: AppState = {
   version: compiler_list.latest,
   versionList: compiler_list.wasm_builds,
+  versionDownloadList: [],
   filePath: "",
   filePathToId: {},
   status: "idle",
@@ -25,7 +36,9 @@ export const appInitialState: AppState = {
   exportVerifierCalldata: true,
   exportWtnsJson: false,
   verificationKey: null,
-  zKey: null
+  zKey: null,
+  zkVerifyStatus: 'idle',
+  zkVerifyAttestation: null
 }
 
 export const appReducer = (state = appInitialState, action: Actions): AppState => {
@@ -155,6 +168,30 @@ export const appReducer = (state = appInitialState, action: Actions): AppState =
     return {
       ...state,
       zKey: action.payload
+    }
+
+  case 'SET_VERSION_DOWNLOAD_LIST':
+    return {
+      ...state,
+      versionDownloadList: action.payload
+    }
+
+  case 'REMOVE_VERSION_FROM_DOWNLOAD_LIST':
+    return {
+      ...state,
+      versionDownloadList: state.versionDownloadList.filter(version => version !== action.payload)
+    }
+
+  case 'SET_ZKVERIFY_STATUS':
+    return {
+      ...state,
+      zkVerifyStatus: action.payload
+    }
+
+  case 'SET_ZKVERIFY_ATTESTATION':
+    return {
+      ...state,
+      zkVerifyAttestation: action.payload
     }
 
   default:

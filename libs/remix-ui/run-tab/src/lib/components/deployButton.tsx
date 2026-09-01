@@ -18,7 +18,6 @@ export function DeployButton(props: DeployButtonProps) {
         <Dropdown as={ButtonGroup}>
           <button
             onClick={props.handleActionClick}
-            title={props.buttonOptions.title}
             className={`udapp_instanceButton ${props.buttonOptions.widthClass} btn btn-sm ${props.buttonOptions.classList}`}
             data-id={props.buttonOptions.dataId}
           >
@@ -40,7 +39,7 @@ export function DeployButton(props: DeployButtonProps) {
                 key={index}
               >
                 {' '}
-                {props.selectedIndex === index ? <span>&#10003; {title} </span> : <span className="pl-3">{title}</span>}
+                {props.selectedIndex === index ? <span>&#10003; {title} </span> : <span className="ps-3">{title}</span>}
               </Dropdown.Item>
             ))}
           </Dropdown.Menu>

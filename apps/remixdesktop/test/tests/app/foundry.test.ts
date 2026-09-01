@@ -9,10 +9,11 @@ const dir = '/tmp/' + projectDir
 
 const tests = {
     before: function (browser: NightwatchBrowser, done: VoidFunction) {
+        browser.hideToolTips()
         done()
     },
     installFoundry: function (browser: NightwatchBrowser) {
-        browser.perform(async (done) => {
+        browser.hideToolTips().perform(async (done) => {
             await downloadFoundry()
             await installFoundry()
             await initFoundryProject()
@@ -48,9 +49,9 @@ const tests = {
                 contractAaddress = address
             })
             .clickInstance(0)
-            .clickFunction('increment - transact (not payable)')
+            .clickFunction(0, 0)
             .perform((done) => {
-                browser.testConstantFunction(contractAaddress, 'number - call', null, '0:\nuint256: 1').perform(() => {
+                browser.testConstantFunction(0, 1, null, '0:\nuint256: 1').perform(() => {
                     done()
                 })
             })
@@ -89,7 +90,7 @@ async function installFoundry(): Promise<void> {
             server.stdout.on('data', function (data) {
                 console.log(data.toString())
                 if (
-                    data.toString().includes("foundryup: done!")
+                    data.toString().includes("foundryup: use - chisel 1.0.0-stable")
                 ) {
                     console.log('resolving')
                     resolve()
@@ -108,7 +109,9 @@ async function installFoundry(): Promise<void> {
 async function initFoundryProject(): Promise<void> {
     console.log('initFoundryProject', homedir())
     try {
-        if (process.env.CIRCLECI) {
+        // Check if running in any CI environment
+        const isCI = process.env.CIRCLECI || process.env.GITHUB_ACTIONS;
+        if (isCI) {
             spawn('git config --global user.email \"you@example.com\"', [], { cwd: homedir(), shell: true, detached: true })
             spawn('git config --global user.name \"Your Name\"', [], { cwd: homedir(), shell: true, detached: true })
         }

@@ -1,23 +1,26 @@
 import { CopyToClipboard } from '@remix-ui/clipboard'
 import { CustomTooltip } from '@remix-ui/helper'
 import { ContractPropertyName } from '@remix-ui/solidity-compiler'
-import React from 'react'
+import React, { useContext } from 'react'
 import { TreeView, TreeViewItem } from '@remix-ui/tree-view'
 import { useIntl } from 'react-intl'
-const _paq = (window._paq = window._paq || [])
+import { TrackingContext } from '@remix-ide/tracking'
+import { CompilerEvent } from '@remix-api'
 
 export default function SolidityCompile({ contractProperties, selectedContract, help, insertValue, saveAs, plugin }: any) {
   const intl = useIntl()
+  const { trackMatomoEvent: baseTrackEvent } = useContext(TrackingContext)
+  const trackMatomoEvent = <T extends CompilerEvent = CompilerEvent>(event: T) => baseTrackEvent?.<T>(event)
   const downloadFn = () => {
-    _paq.push(['trackEvent', 'compiler', 'compilerDetails', 'download'])
+    trackMatomoEvent({ category: 'compiler', action: 'compilerDetails', name: 'download', isClick: true })
     saveAs(new Blob([JSON.stringify(contractProperties, null, '\t')]), `${selectedContract}_compData.json`)
   }
   return (
     <>
-      <div className="d-flex justify-content-between align-items-center mr-1">
+      <div className="d-flex justify-content-between align-items-center me-1">
         <span className="lead">{selectedContract}</span>
         <CustomTooltip tooltipText={intl.formatMessage({ id: 'solidity.compileDetails' })}>
-          <span className="btn btn-outline-success border-success mr-1" onClick={downloadFn}>Download</span>
+          <span className="btn btn-outline-success border-success me-1" onClick={downloadFn}>Download</span>
         </CustomTooltip>
       </div>
       <div className="remixui_detailsJSON">
@@ -37,7 +40,7 @@ export default function SolidityCompile({ contractProperties, selectedContract, 
               >
                 <span className="remixui_questionMark">
                   <i
-                    className="fas fa-info-circle"
+                    className="fas fa-info"
                     aria-hidden="true"
                   ></i>
                 </span>

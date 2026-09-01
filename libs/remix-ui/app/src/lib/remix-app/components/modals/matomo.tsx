@@ -2,20 +2,17 @@ import React, { useContext, useEffect, useState } from 'react'
 import { FormattedMessage } from 'react-intl'
 import { AppContext } from '../../context/context'
 import { useDialogDispatchers } from '../../context/provider'
-declare global {
-  interface Window {
-    _paq: any
-  }
-}
-const _paq = (window._paq = window._paq || [])
+import { TrackingContext } from '@remix-ide/tracking'
+import { LandingPageEvent } from '@remix-api'
 
 interface MatomoDialogProps {
-  okFn: () => void
+  managePreferencesFn: () => void
   hide: boolean
 }
 
 const MatomoDialog = (props: MatomoDialogProps) => {
-  const { settings, showMatamo, appManager } = useContext(AppContext)
+  const { settings, showMatomo } = useContext(AppContext)
+  const { trackMatomoEvent } = useContext(TrackingContext)
   const { modal } = useDialogDispatchers()
   const [visible, setVisible] = useState<boolean>(props.hide)
 
@@ -24,7 +21,17 @@ const MatomoDialog = (props: MatomoDialogProps) => {
       <>
         <p>
           <FormattedMessage
-            id="remixApp.matomoText1"
+            id="remixApp.matomoText1Old"
+            values={{
+              a: (chunks) => (
+                <a href="https://remix-ide.readthedocs.io/en/latest/ai.html" target="_blank" rel="noreferrer">
+                  {chunks}
+                </a>
+              ),
+            }}
+          /><br/>
+          <FormattedMessage
+            id="remixApp.matomoText2"
             values={{
               a: (chunks) => (
                 <a href="https://matomo.org" target="_blank" rel="noreferrer">
@@ -34,61 +41,38 @@ const MatomoDialog = (props: MatomoDialogProps) => {
             }}
           />
         </p>
-        <p>
-          <FormattedMessage id="remixApp.matomoText2" />
-        </p>
-        <p>
-          <FormattedMessage id="remixApp.matomoText3" />
-        </p>
-        <p>
-          <FormattedMessage id="remixApp.matomoText4" />
-        </p>
-        <p>
-          <FormattedMessage
-            id="remixApp.matomoText5"
-            values={{
-              a: (chunks) => (
-                <a href="https://medium.com/p/66ef69e14931/" target="_blank" rel="noreferrer">
-                  {chunks}
-                </a>
-              ),
-            }}
-          />
-        </p>
-        <p>
-          <FormattedMessage id="remixApp.matomoText6" />
-        </p>
       </>
     )
   }
 
   useEffect(() => {
-    if (visible && showMatamo) {
+    if (visible && showMatomo) {
       modal({
         id: 'matomoModal',
         title: <FormattedMessage id="remixApp.matomoTitle" />,
         message: message(),
         okLabel: <FormattedMessage id="remixApp.accept" />,
-        okFn: handleModalOkClick,
-        cancelLabel: <FormattedMessage id="remixApp.decline" />,
-        cancelFn: declineModal,
+        okFn: handleAcceptAllClick,
+        cancelLabel: <FormattedMessage id="remixApp.managePreferences" />,
+        cancelFn: handleManagePreferencesClick,
+        showCancelIcon: true,
+        preventBlur: true
       })
     }
   }, [visible])
 
-  const declineModal = async () => {
-    settings.updateMatomoAnalyticsChoice(false)
-    // revoke tracking consent
-    _paq.push(['forgetConsentGiven'])
+  const handleAcceptAllClick = async () => {
+    // Consent is managed by cookie consent system in settings
+    settings.updateMatomoPerfAnalyticsChoice(true) // Enable Matomo Performance analytics
+    settings.updateCopilotChoice(true) // Enable RemixAI copilot
+    trackMatomoEvent?.({ category: 'landingPage', action: 'MatomoAIModal', name: 'AcceptClicked' })
     setVisible(false)
   }
 
-  const handleModalOkClick = async () => {
-    // user has given consent to process their data
-    _paq.push(['setConsentGiven'])
-    settings.updateMatomoAnalyticsChoice(true)
+  const handleManagePreferencesClick = async () => {
+    trackMatomoEvent?.({ category: 'landingPage', action: 'MatomoAIModal', name: 'ManagePreferencesClicked' })
     setVisible(false)
-    props.okFn()
+    props.managePreferencesFn()
   }
 
   return <></>

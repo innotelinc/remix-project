@@ -25,7 +25,7 @@ const tests = {
     },
 
     'run server #group1 #group2 #group3': function (browser: NightwatchBrowser) {
-        browser.perform(async (done) => {
+        browser.hideToolTips().perform(async (done) => {
             gitserver = await spawnGitServer('/tmp/')
             console.log('working directory', process.cwd())
             done()
@@ -47,7 +47,8 @@ const tests = {
             .pause(5000)
             .windowHandles(function (result) {
                 console.log(result.value)
-                browser.switchWindow(result.value[1])
+                browser.hideToolTips().switchWindow(result.value[1])
+                    .hideToolTips()
                     .waitForElementVisible('*[data-id="treeViewLitreeViewItem.git"]')
                     .hideToolTips()
             })
@@ -88,8 +89,30 @@ const tests = {
                 selector: "//*[@data-status='added-staged' and @data-file='/test.txt']",
                 locateStrategy: 'xpath'
             })
+            .waitForElementVisible('*[data-id="addToGitChangesremix.config.json"]')
+            .click('*[data-id="addToGitChangesremix.config.json"]')
+            .waitForElementVisible({
+                selector: "//*[@data-status='added-staged' and @data-file='/remix.config.json']",
+                locateStrategy: 'xpath'
+            })
             .setValue('*[data-id="commitMessage"]', 'testcommit')
+            .waitForElementPresent({
+                selector: '//*[@data-id="commitButton" and not(@disabled)]',
+                locateStrategy: 'xpath'
+            })
             .click('*[data-id="commitButton"]')
+            .waitForElementPresent({
+                selector: '//*[@data-id="commitButton" and @disabled]',
+                locateStrategy: 'xpath'
+            })
+            .waitForElementNotPresent({
+                selector: "//*[@data-status='added-staged' and @data-file='/test.txt']",
+                locateStrategy: 'xpath'
+            })
+            .waitForElementNotPresent({
+                selector: "//*[@data-status='added-staged' and @data-file='/remix.config.json']",
+                locateStrategy: 'xpath'
+            })
     },
     'look at the commit #group1': function (browser: NightwatchBrowser) {
         browser
@@ -141,7 +164,15 @@ const tests = {
                 locateStrategy: 'xpath'
             })
             .setValue('*[data-id="commitMessage"]', 'testcommit2')
+            .waitForElementPresent({
+                selector: '//*[@data-id="commitButton" and not(@disabled)]',
+                locateStrategy: 'xpath'
+            })
             .click('*[data-id="commitButton"]')
+            .waitForElementNotPresent({
+                selector: "//*[@data-status='modified-staged' and @data-file='/test.txt']",
+                locateStrategy: 'xpath'
+            })
     },
     'push the commit #group1': function (browser: NightwatchBrowser) {
         browser

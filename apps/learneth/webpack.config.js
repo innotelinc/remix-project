@@ -47,14 +47,7 @@ module.exports = composePlugins(withNx(), (config) => {
     })
   )
 
-  // set the define plugin to load the WALLET_CONNECT_PROJECT_ID
-  config.plugins.push(
-    new webpack.DefinePlugin({
-      WALLET_CONNECT_PROJECT_ID: JSON.stringify(process.env.WALLET_CONNECT_PROJECT_ID),
-    })
-  )
-
-  // souce-map loader
+  // source-map loader
   config.module.rules.push({
     test: /\.js$/,
     use: ['source-map-loader'],
@@ -85,6 +78,12 @@ module.exports = composePlugins(withNx(), (config) => {
   }
 
   config.experiments.syncWebAssembly = true
+
+  // polyfill global for browser (needed by stream-browserify etc.)
+  config.node = {
+    ...config.node,
+    global: true,
+  }
 
   return config
 })

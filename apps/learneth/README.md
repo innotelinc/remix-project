@@ -34,7 +34,7 @@ cannot compile and test files in the workshops.
 
 You can create your own workshops that can be imported in the plugin.
 When importing a github repo the plugin will look for a directory structure describing the workshops.
-For example: https://github.com/ethereum/remix-workshops
+For example: https://github.com/remix-project-org/remix-workshops
 
 ### Root directories
 
@@ -72,7 +72,7 @@ Each step is a directory containing:
 
 - a readme describing the step, what to do.
 - sol files:
-  - these can be sol files and test sol files. The test files should be name yoursolname_test.sol
+  - these can be sol files and test sol files. The test files should be named yoursolname_test.sol
   - ANSWER files: these are named yoursolname_answer.sol and can be used to show the solution or the correct answer. The plugin will load the
     file in the IDE when a user clicks on 'Show Answer'
 - js files
@@ -118,9 +118,9 @@ tags:
 (function ()  {
 try {
     // You don't need to add a separate addRepository before calling startTutorial, this is just an example
-    remix.call('LearnEth', 'addRepository', "ethereum/remix-workshops", "master")
-    remix.call('LearnEth', 'startTutorial', "ethereum/remix-workshops", "master", "basics")
-    remix.call('LearnEth', 'startTutorial', "ethereum/remix-workshops", "master", 2)
+    remix.call('LearnEth', 'addRepository', "remix-project-org/remix-workshops", "master")
+    remix.call('LearnEth', 'startTutorial', "remix-project-org/remix-workshops", "master", "basics")
+    remix.call('LearnEth', 'startTutorial', "remix-project-org/remix-workshops", "master", 2)
 } catch (e) {
    console.log(e.message)
 }

@@ -7,42 +7,79 @@
     align-self: center;
 }
   .remixui_homeIcon:hover {
-    box-shadow: 0px 0px 14px -7px;
+    /* box-shadow: 0px 0px 14px -7px; */
   }
 
   .remixui_homeIcon svg path {
-    fill: var(--primary);
+    fill: var(--bs-primary);
   }
   .remixui_homeIcon svg polygon {
-    fill: var(--primary);
+    fill: var(--bs-primary);
   }
   .remixui_icons {
     display: flex;
     flex-flow: column nowrap;
   }
-  .remixui_icon:hover {
-    box-shadow: 0px 0px 14px -7px;
-  }
-
   .remixui_icon {
+    position: relative;
+    display: flex;
     cursor: pointer;
     width: 36px;
-    height: 36px;
-    border-radius: 8px;
+    /* height: 36px; */
     align-items: center;
-     animation: highlight 2s forwards ;
+    justify-content: center;
+     /* animation: highlight 2s forwards ; */
   }
 
   @keyframes highlight {
-    from {background-color: var(--secondary);}
+    from {background-color: var(--bs-secondary);}
     to {background-color: transparent;}
   }
 
   .remixui_icon img {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     padding: 4px;
     filter: invert(0.5);
+  }
+
+  .remixui_icon_ai {
+    position: relative;
+    display: flex;
+    cursor: pointer;
+    width: 36px;
+    /* height: 36px; */
+    align-items: center;
+    justify-content: center;
+  }
+
+  .remixui_icon_ai svg {
+    width: 24px;
+    height: 24px;
+    padding: 4px;
+  }
+
+  .remixui_icon_labeled {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    width: 52px;
+    height: auto;
+    /* min-height: 36px; */
+    padding-bottom: 4px;
+  }
+
+  .remixui_icon_label {
+    font-size: 10px;
+    line-height: 1.15;
+    width: 100%;
+    margin-top: 2px;
+    text-align: center;
+    white-space: normal;
+    overflow-wrap: normal;
+    word-break: normal;
+    color: var(--bs-secondary-color);
   }
 
   .remixui_icon .selected-dark {
@@ -53,9 +90,36 @@
     filter: invert(0) grayscale(1);
   }
 
+  /* hover/active background now lives on the row (.remixui_icon_row) so the highlight spans
+     the full row width, not just the icon's own box */
+  .remixui_icon_row {
+    transition: background-color 0.12s ease;
+  }
+  /* half of Bootstrap's py-1 (0.25rem) — labeled rows are already taller from the label text */
+  .remixui_icon_row--compact {
+    padding-top: 2px;
+    padding-bottom: 2px;
+  }
+  .remixui_icon_row:hover {
+    background-color: color-mix(in srgb, var(--bs-body-color) 10%, transparent);
+  }
+  .remixui_icon_row--active {
+    background-color: color-mix(in srgb, var(--icon-accent, var(--custom-primary)) 14%, transparent);
+  }
+  .remixui_icon_row--active:hover {
+    background-color: color-mix(in srgb, var(--icon-accent, var(--custom-primary)) 20%, transparent);
+  }
+  /* only recolors icons already converted to inline SVG with fill: var(--bs-secondary-color) —
+     raster <img> icons keep their existing invert-filter based selected state below */
+  .remixui_icon.remixui_icon--active svg path,
+  .remixui_icon.remixui_icon--active svg g path {
+    fill: var(--custom-primary);
+  }
+
+
   .remixui_icon svg {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     padding: 4px;
   }
   .remixui_icon[title='Settings'] {
@@ -63,12 +127,36 @@
     align-self: center;
     bottom: 0;
   }
+  /* absolutely positioned so a status badge (compiling/compiled/error…) never adds to the
+     icon's own box height — it anchors to .remixui_icon/.remixui_icon_ai (position: relative) */
   .remixui_status {
-    position: relative;
-    bottom: 0;
-    right: 0;
-    left: 12px;
-    top: -13px;
+    position: absolute;
+    top: -4px;
+    right: -4px;
+  }
+  /* attention-drawing dot for Plan & Credits — a solid dot plus an expanding, fading ring */
+  .remixui_icon_ping {
+    position: absolute;
+    top: 0;
+    right: 4px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: var(--custom-primary);
+  }
+  .remixui_icon_ping::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background-color: var(--custom-primary);
+    animation: remixui_ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+  @keyframes remixui_ping {
+    75%, 100% {
+      transform: scale(2.4);
+      opacity: 0;
+    }
   }
   .remixui_statusCheck {
     font-size: 1.2em;
@@ -76,7 +164,7 @@
   .remixui_statusWithBG {
     border-radius: 8px;
     background-color: var(--danger);
-    color: var(--light);
+    color: var(--bs-light);
     font-size: 12px;
     height: 15px;
     text-align: center;
@@ -88,9 +176,9 @@
   .remixui_verticalIconContextcontainer {
     display: block;
     position: fixed;
-    border-radius: 2px;
+    /* border-radius: 2px; */
     z-index: 1000;
-    box-shadow: 0 0 4px var(--dark);
+    /* box-shadow: 0 0 4px var(--dark); */
   }
   .remixui_verticalIconContextcontainer:focus {
     outline: 0;
@@ -100,10 +188,10 @@
     padding-left: 6px;
     cursor: pointer;
     color: var(--text-dark);
-    background-color: var(--light);
+    background-color: var(--bs-light);
   }
   .remixui_liitem:hover {
-    background-color: var(--secondary);
+    background-color: var(--bs-secondary);
   }
 
   .remixui_scrollbar {
@@ -115,10 +203,11 @@
     text-align: center;
   }
   .remixui_scrollable-container {
-    flex-basis: 510px;
-    flex-grow: 2;
+    flex: 1 1 auto;
+    min-height: 0;
     text-align: center;
     margin-top: -6px;
+    padding-bottom: 48px;
     /* border-bottom: 3px solid #3f4455; */
   }
   .remixui_scrollbar::-webkit-scrollbar { /* Chrome, Safari and other Webkit browsers*/
@@ -131,6 +220,17 @@
     border-bottom: 2px solid #3f4455;
     text-align: center;
   }
+  /* divider between the fixed/required icons and everything below — always visible,
+     regardless of whether .remixui_default-icons-container's overflow border is also active */
+  .remixui_requiredSection {
+    border-bottom: 1px solid var(--bs-border-color);
+    padding-bottom: 4px;
+    margin-bottom: 4px;
+  }
+  .remixui_ai-divider {
+    border-bottom: 1px solid var(--bs-border-color);
+    /* margin: 4px 8px; */
+  }
   .remixui_icon-chevron {
     z-index: 1000;
     cursor: pointer;
@@ -142,10 +242,185 @@
   }
 
   .remixui_icons_height {
-    height: 97vh;
+    height: 100%;
   }
 
   #menuitems {
     list-style: none;
     margin: 0px;
   }
+
+/* ============================================================
+   Help popover — anchored to the icon-rail's bottom ? button
+   ============================================================ */
+.hm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1040;
+}
+
+.hm-popover {
+  position: fixed;
+  bottom: 36px;
+  left: 52px;
+  width: 320px;
+  background: var(--bs-body-bg);
+  border: 1px solid var(--bs-border-color);
+  border-radius: 8px;
+  padding: 6px 0;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  z-index: 1050;
+  font-family: 'Nunito Sans', sans-serif;
+  color: var(--bs-body-color);
+  --hm-accent: var(--custom-primary);
+  --hm-hover-bg: rgba(var(--bs-body-color-rgb), 0.1);
+}
+
+.hm-section {
+  padding: 6px 4px;
+}
+.hm-section + .hm-section { border-top: 1px solid var(--bs-border-color); }
+.hm-section.hm-section-muted { padding: 8px 12px; }
+
+.hm-section-title {
+  margin: 0 0 4px;
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--bs-secondary-color);
+}
+
+.hm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  margin: 0 4px;
+  color: inherit;
+  text-decoration: none;
+}
+.hm-row:hover { background: var(--hm-hover-bg); text-decoration: none; }
+
+.hm-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--hm-accent) 10%, transparent);
+  color: var(--hm-accent);
+  flex-shrink: 0;
+}
+
+.hm-row-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  min-width: 0;
+}
+.hm-row-text strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--bs-emphasis-color);
+}
+.hm-row-text small {
+  font-size: 11px;
+  color: var(--bs-secondary-color);
+  margin-top: 2px;
+}
+
+.hm-social {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  padding: 4px 8px 8px;
+}
+.hm-social-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--bs-secondary-color);
+  text-decoration: none;
+  font-size: 10px;
+  font-weight: 600;
+}
+.hm-social-btn:hover {
+  background: var(--hm-hover-bg);
+  color: var(--bs-emphasis-color);
+  text-decoration: none;
+}
+
+.hm-about-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+.hm-about-version {
+  color: var(--bs-secondary-color);
+  flex: 1;
+  min-width: 0;
+}
+.hm-about-link {
+  color: var(--hm-accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+.hm-about-link:hover { text-decoration: underline; }
+
+.hm-row-cta {
+  background: color-mix(in srgb, var(--hm-accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--hm-accent) 30%, transparent);
+  margin: 4px 8px;
+  padding: 10px 12px;
+  border-radius: 6px;
+}
+.hm-row-cta:hover {
+  background: color-mix(in srgb, var(--hm-accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--hm-accent) 55%, transparent);
+}
+.hm-row-icon-cta {
+  background: color-mix(in srgb, var(--hm-accent) 18%, transparent);
+  color: var(--hm-accent);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+}
+.hm-row-cta strong { color: var(--bs-emphasis-color); }
+
+.remixui_help-container {
+  flex-shrink: 0;
+  width: 50px;
+  display: flex;
+  justify-content: center;
+  padding: 6px 0;
+  z-index: 2;
+}
+
+.remixui_help-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #a2a3bd;
+  font-size: 16px;
+  padding: 0;
+}
+.remixui_help-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #d5d7e3;
+}

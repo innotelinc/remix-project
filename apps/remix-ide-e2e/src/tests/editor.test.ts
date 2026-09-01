@@ -87,7 +87,8 @@ module.exports = {
     function (browser: NightwatchBrowser) {
       browser
         .waitForElementVisible('*[data-id="verticalIconsKindsettings"]')
-        .click('*[data-id="verticalIconsKindsettings"]')
+        .waitForElementVisible('*[data-id="topbar-settingsIcon"]')
+        .click('*[data-id="topbar-settingsIcon"]')
         .waitForElementVisible('*[data-id="settingsTabThemeLabelDark"]')
         .click('*[data-id="settingsTabThemeLabelDark"]')
         .pause(2000)
@@ -107,9 +108,9 @@ module.exports = {
       .addFile('removeAllSourcehighlightScript.js', removeAllSourcehighlightScript)
       .openFile('sourcehighlight.js')
       .executeScriptInTerminal('remix.exeCurrent()')
-      .scrollToLine(32)
-      .waitForElementPresent('.highlightLine33', 60000)
-      .checkElementStyle('.highlightLine33', 'background-color', 'rgb(52, 152, 219)')
+      .scrollToLine(33)
+      .waitForElementPresent('.highlightLine34', 60000)
+      .checkElementStyle('.highlightLine34', 'background-color', 'rgb(52, 152, 219)')
       .scrollToLine(40)
       .waitForElementPresent('.highlightLine41', 60000)
       .checkElementStyle('.highlightLine41', 'background-color', 'rgb(52, 152, 219)')
@@ -172,16 +173,16 @@ const sourcehighlightScript = {
         await remix.call('fileManager', 'open', 'contracts/3_Ballot.sol')
         const pos = {
             start: {
-                line: 32,
+                line: 33,
                 column: 3
             },
             end: {
-                line: 32,
+                line: 33,
                 column: 20
             }
         }
         await remix.call('editor', 'highlight', pos, 'contracts/3_Ballot.sol')
-        
+
          const pos2 = {
             start: {
                 line: 40,
@@ -193,7 +194,7 @@ const sourcehighlightScript = {
             }
         }
         await remix.call('editor', 'highlight', pos2, 'contracts/3_Ballot.sol')
-        
+
          const pos3 = {
             start: {
                 line: 50,
@@ -216,7 +217,7 @@ const removeAllSourcehighlightScript = {
   content: `
   (async () => {
     try {
-        await remix.call('editor', 'discardHighlight')         
+        await remix.call('editor', 'discardHighlight')
     } catch (e) {
         console.log(e.message)
     }
@@ -246,7 +247,7 @@ contract Storage {
     }
 
     /**
-     * @dev Return value 
+     * @dev Return value
      * @return value of 'number'
      */
     function retrieve() public view returns (uint256){

@@ -43,6 +43,23 @@ export class TraceCache {
     this.sstore = {} // all sstore occurrences in the trace
   }
 
+  getAll () {
+    return {
+      returnValues: this.returnValues,
+      stopIndexes: this.stopIndexes,
+      outofgasIndexes: this.outofgasIndexes,
+      callsTree: this.callsTree,
+      callsData: this.callsData,
+      contractCreation: this.contractCreation,
+      // steps: this.steps,
+      addresses: this.addresses,
+      callDataChanges: this.callDataChanges,
+      memoryChanges: this.memoryChanges,
+      storageChanges: this.storageChanges,
+      sstore: this.sstore
+    }
+  }
+
   pushSteps (index, currentCallIndex) {
     this.steps[index] = currentCallIndex
   }
@@ -125,7 +142,8 @@ export class TraceCache {
       address: address,
       key: key,
       value: value,
-      hashedKey: key && sha3_256(key)
+      hashedKey: key && sha3_256(key),
+      contextCall: this.currentCall
     }
     this.storageChanges.push(index)
   }
@@ -138,10 +156,15 @@ export class TraceCache {
         return ret
       }
       const sstore = this.sstore[changesIndex]
-      if (sstore.address === address && sstore.key) {
-        ret[sstore.hashedKey] = {
-          key: sstore.key,
-          value: sstore.value
+      if (sstore.address?.toLowerCase() === address?.toLowerCase() && sstore.key) {
+        if (sstore.contextCall?.call?.return < index && sstore.contextCall?.call?.reverted) {
+          // this is a previous call which has reverted. state changes aren't kept.
+          continue
+        } else {
+          ret[sstore.hashedKey] = {
+            key: sstore.key,
+            value: sstore.value
+          }
         }
       }
     }

@@ -1,17 +1,20 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useContext } from "react";
 import { gitActionsContext } from "../../../state/context";
 import { gitPluginContext } from "../../gitui";
 import { selectStyles, selectTheme } from "../../../types/styles";
 import Select, { Options, OptionsOrGroups } from 'react-select'
 import GitUIButton from "../../buttons/gituibutton";
-import { remote } from "@remix-api";
+import { remote, GitEvent, MatomoEvent } from "@remix-api";
 import { gitMatomoEventTypes } from "../../../types";
 import { relative } from "path";
-import { sendToMatomo } from "../../../lib/pluginActions";
+import { TrackingContext } from "@remix-ide/tracking";
+import { FormattedMessage, useIntl } from "react-intl";
 
 export const PushPull = () => {
   const context = React.useContext(gitPluginContext)
   const actions = React.useContext(gitActionsContext)
+  const { trackMatomoEvent: baseTrackEvent } = useContext(TrackingContext)
+  const intl = useIntl()
   const [remoteBranch, setRemoteBranch] = useState('')
   const [localBranch, setLocalBranch] = useState('')
   const [localBranchOptions, setLocalBranchOptions] = useState<any>([]);
@@ -19,6 +22,11 @@ export const PushPull = () => {
   const [localRemotesOptions, setLocalRemotesOptions] = useState<any>([]);
   const [disabled, setDisabled] = useState(false)
   const [force, setForce] = useState(false)
+
+  // Component-specific tracker with default GitEvent type
+  const trackMatomoEvent = <T extends MatomoEvent = GitEvent>(event: T) => {
+    baseTrackEvent?.<T>(event)
+  }
 
   useEffect(() => {
     setRemoteBranch(context.currentBranch.name)
@@ -48,12 +56,22 @@ export const PushPull = () => {
   },[context.defaultRemote])
 
   const onRemoteBranchChange = async (value: string) => {
-    await sendToMatomo(gitMatomoEventTypes.SETREMOTEBRANCHINCOMMANDS)
+    trackMatomoEvent({
+      category: 'git',
+      action: 'SET_REMOTE_IN_COMMANDS',
+      name: 'SELECT_REMOTE_BRANCH',
+      isClick: true
+    })
     setRemoteBranch(value)
   }
 
   const onLocalBranchChange = async (value: any) => {
-    await sendToMatomo(gitMatomoEventTypes.SETLOCALBRANCHINCOMMANDS)
+    trackMatomoEvent({
+      category: 'git',
+      action: 'SET_LOCAL_BRANCH_IN_COMMANDS',
+      name: 'SELECT_LOCAL_BRANCH',
+      isClick: true
+    })
     setLocalBranch(value)
   }
 
@@ -156,15 +174,15 @@ export const PushPull = () => {
   return (
     <>
       {disabled? <div data-id='disabled' className='text-sm w-100 alert alert-warning mt-1'>
-        You cannot push or pull because you haven't connected to or selected a remote.
+        <FormattedMessage id="gitui.pushPullDisabledWarning" />
       </div>: null}
       <div className="btn-group w-100 mt-2" role="group">
 
-        <GitUIButton data-id='sourcecontrol-pull' disabledCondition={pushPullIsDisabled()} type="button" onClick={async () => pull()} className="btn btn-primary mr-1">Pull</GitUIButton>
-        <GitUIButton data-id='sourcecontrol-push' disabledCondition={pushPullIsDisabled()} type="button" onClick={async () => push()} className="btn btn-primary">Push</GitUIButton>
+        <GitUIButton data-id='sourcecontrol-pull' disabledCondition={pushPullIsDisabled()} type="button" onClick={async () => pull()} className="btn btn-primary me-1"><FormattedMessage id="git.pull" /></GitUIButton>
+        <GitUIButton data-id='sourcecontrol-push' disabledCondition={pushPullIsDisabled()} type="button" onClick={async () => push()} className="btn btn-primary"><FormattedMessage id="git.push" /></GitUIButton>
       </div>
 
-      <label className="pt-3 text-uppercase">Local Branch</label>
+      <label className="pt-3 text-uppercase"><FormattedMessage id="gitui.localBranchLabel" /></label>
       <Select
         id='commands-local-branch-select'
         options={localBranchOptions}
@@ -174,10 +192,10 @@ export const PushPull = () => {
         styles={selectStyles}
         isClearable={true}
         value={{ value: localBranch, label: localBranch }}
-        placeholder="Type to search for a branch..."
+        placeholder={intl.formatMessage({ id: 'gitui.branchSearchPlaceholder' })}
       />
 
-      <label className="pt-3 text-uppercase">Remote Branch</label>
+      <label className="pt-3 text-uppercase"><FormattedMessage id="gitui.remoteBranchLabel" /></label>
       <Select
         id='commands-remote-branch-select'
         options={remoteBranchOptions}
@@ -187,10 +205,10 @@ export const PushPull = () => {
         styles={selectStyles}
         isClearable={true}
         value={{ value: remoteBranch, label: remoteBranch }}
-        placeholder="Type to search for a branch..."
+        placeholder={intl.formatMessage({ id: 'gitui.branchSearchPlaceholder' })}
       />
 
-      <label className="pt-3 text-uppercase">Remote</label>
+      <label className="pt-3 text-uppercase"><FormattedMessage id="gitui.remoteLabel" /></label>
       <Select
         id='commands-remote-origin-select'
         options={localRemotesOptions}
@@ -200,12 +218,12 @@ export const PushPull = () => {
         styles={selectStyles}
         isClearable={true}
         value={{ value: context.upstream && context.upstream.name, label: context.upstream && context.upstream.name }}
-        placeholder="Type to search for a branch..."
+        placeholder={intl.formatMessage({ id: 'gitui.branchSearchPlaceholder' })}
       />
 
-      <div className="pt-3 d-flex align-items-center remixui_compilerConfig custom-control custom-checkbox">
-        <input checked={force} onChange={e => onForceChange(e)} className="remixui_autocompile form-check-input custom-control-input" type="checkbox" data-id="compilerContainerAutoCompile" id="forcepush" title="Force Push" />
-        <label className="form-check-label custom-control-label " htmlFor="forcepush">Force push</label>
+      <div className="pt-3 d-flex align-items-center remixui_compilerConfig form-check">
+        <input checked={force} onChange={e => onForceChange(e)} className="form-check-input" type="checkbox" data-id="compilerContainerAutoCompile" id="forcepush" />
+        <label className="form-check-label ms-1" htmlFor="forcepush"><FormattedMessage id="gitui.forcePush" /></label>
       </div>
 
     </>)

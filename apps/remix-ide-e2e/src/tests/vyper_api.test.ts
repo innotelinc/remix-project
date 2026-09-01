@@ -10,7 +10,7 @@ declare global {
 module.exports = {
   '@disabled': true,
   before: function (browser: NightwatchBrowser, done: VoidFunction) {
-    init(browser, done, 'http://localhost:8080')
+    init(browser, done)
   },
 
   'Should connect to vyper plugin #group1': function (browser: NightwatchBrowser) {
@@ -25,7 +25,7 @@ module.exports = {
       .waitForElementVisible('button[data-id="add-repository"]')
       .click('button[data-id="add-repository"]')
       .frameParent()
-      .clickLaunchIcon('filePanel')
+      // .clickLaunchIcon('filePanel')
       .waitForElementVisible({
         selector: "//*[@data-id='workspacesSelect' and contains(.,'vyper')]",
         locateStrategy: 'xpath',
@@ -36,6 +36,7 @@ module.exports = {
         locateStrategy: 'xpath',
         timeout: 120000
       })
+      .pause(2000)
       .openFile('examples')
       .openFile('examples/auctions')
       .openFile('examples/auctions/blind_auction.vy')
@@ -114,6 +115,25 @@ module.exports = {
     }
   },
 
+  'Should lead to a compilation error #group1': function (browser: NightwatchBrowser) {
+    browser
+      .clickLaunchIcon('filePanel')
+      .switchWorkspace('default_workspace')
+      .addFile('test_error.vy', { content: wrongContract })
+      .clickLaunchIcon('vyper')
+      // @ts-ignore
+      .frame(0)
+      .waitForElementVisible('[data-id="compile"]')
+      .click('[data-id="compile"]')
+      .waitForElementVisible({
+        selector:'[data-id="test_error.vy"]',
+        timeout: 60000
+      })
+      .waitForElementContainsText('[data-id="test_error.vy"]', 'ERROR')
+      .waitForElementContainsText('[data-id="test_error.vy"]', 'StructureException:Unsupported syntax for module namespace')
+      .frameParent()
+  },
+
   'Compile test contract and deploy to remix VM #group1': function (browser: NightwatchBrowser) {
     let contractAddress
     browser
@@ -133,9 +153,11 @@ module.exports = {
       .frameParent()
       .waitForElementVisible('[data-id="copy-abi"]')
       .clickLaunchIcon('udapp')
+      .selectContract('test')
       .createContract('')
+      .closeBetaPopUp()
       .clickInstance(0)
-      .clickFunction('totalPokemonCount - call')
+      .clickFunction(0, 0)
       .getAddressAtPosition(0, (address) => {
         console.log('Vyper contract ' + address)
         contractAddress = address
@@ -206,6 +228,39 @@ def _createPokemon(_name: String[32], _dna: uint256, _HP: uint256):
         wins: 0
     })
     self.totalPokemonCount += 1`
+
+const wrongContract = `
+DNA_DIGITS: constant(uint256) = 16
+DNA_MODULUS: constant(uint256) = 10 ** DNA_DIGITS
+# add HP_LIMIT
+ERROR
+struct Pokemon:
+    name: String[32]
+    dna: uint256
+    HP: uint256
+    matches: uint256
+    wins: uint256
+
+totalPokemonCount: public(uint256)
+pokemonList: HashMap[uint256, Pokemon]
+
+@pure
+@internal
+def _generateRandomDNA(_name: String[32]) -> uint256:
+    random: uint256 = convert(keccak256(_name), uint256)
+    return random % DNA_MODULUS
+# modify _createPokemon
+@internal
+def _createPokemon(_name: String[32], _dna: uint256, _HP: uint256):
+    self.pokemonList[self.totalPokemonCount] = Pokemon({
+        name: _name,
+        dna: _dna,
+        HP: _HP,
+        matches: 0,
+        wins: 0
+    })
+    self.totalPokemonCount += 1`
+
 const sources = [{
 
   'blindAuction' : { content: `

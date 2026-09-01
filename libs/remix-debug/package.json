@@ -1,6 +1,6 @@
 {
   "name": "@remix-project/remix-debug",
-  "version": "0.5.57",
+  "version": "0.5.91",
   "description": "Tool to debug Ethereum transactions",
   "contributors": [
     {
@@ -21,27 +21,28 @@
     "test": "./../../node_modules/.bin/ts-node --project ../../tsconfig.base.json --require tsconfig-paths/register ./../../node_modules/.bin/tape ./test/tests.ts"
   },
   "dependencies": {
-    "@ethereumjs/block": "5.3.0",
-    "@ethereumjs/common": "4.4.0",
-    "@ethereumjs/tx": "5.4.0",
-    "@ethereumjs/util": "9.1.0",
-    "@ethereumjs/vm": "8.1.1",
-    "@remix-project/remix-astwalker": "^0.0.87",
-    "@remix-project/remix-lib": "^0.5.64",
-    "@remix-project/remix-simulator": "^0.2.57",
-    "@remix-project/remix-solidity": "^0.5.43",
+    "@ethereumjs/block": "^10.1.1",
+    "@ethereumjs/common": "^10.1.1",
+    "@ethereumjs/evm": "^10.1.1",
+    "@ethereumjs/tx": "^10.1.1",
+    "@ethereumjs/util": "^10.1.1",
+    "@ethereumjs/vm": "^10.1.1",
+    "@remix-project/remix-astwalker": "^0.0.121",
+    "@remix-project/remix-lib": "^0.5.100",
+    "@remix-project/remix-simulator": "^0.2.91",
+    "@remix-project/remix-solidity": "^0.5.77",
     "ansi-gray": "^0.1.1",
     "async": "^2.6.2",
+    "bn.js": "^5.1.2",
     "color-support": "^1.1.3",
     "commander": "^9.4.1",
     "deep-equal": "^1.0.1",
-    "ethers": "^5.4.2",
+    "ethers": "^6.14.0",
     "ethjs-util": "^0.1.6",
     "express-ws": "^4.0.0",
     "merge": "^2.1.1",
     "string-similarity": "^4.0.4",
-    "time-stamp": "^2.2.0",
-    "web3": "^4.1.1"
+    "time-stamp": "^2.2.0"
   },
   "devDependencies": {
     "@babel/core": "^7.4.5",
@@ -60,15 +61,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ethereum/remix-project.git"
+    "url": "git+https://github.com/remix-project-org/remix-project.git"
   },
   "author": "Remix Team",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/ethereum/remix-project/issues"
+    "url": "https://github.com/remix-project-org/remix-project/issues"
   },
-  "homepage": "https://github.com/ethereum/remix-project/tree/master/libs/remix-debug#readme",
+  "homepage": "https://github.com/remix-project-org/remix-project/tree/master/libs/remix-debug#readme",
   "typings": "src/index.d.ts",
-  "gitHead": "28b25d08084ff0dd952f2cd649dbcd1c1ab30e01",
+  "gitHead": "7ab0c02208f4cc457506acfb22544c35011425a6",
   "types": "./src/index.d.ts"
 }

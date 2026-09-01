@@ -7,6 +7,7 @@ const fs = require('fs')
 const TerserPlugin = require('terser-webpack-plugin')
 const CssMinimizerPlugin = require('css-minimizer-webpack-plugin')
 const path = require('path')
+const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer');
 
 const versionData = {
   version: version,
@@ -14,18 +15,73 @@ const versionData = {
   mode: process.env.NODE_ENV === 'production' ? 'production' : 'development'
 }
 
-const loadLocalSolJson = async () => {
-  //execute apps/remix-ide/ci/downloadsoljson.sh
-  console.log('loading local soljson')
-  const child = require('child_process').execSync('bash ' + __dirname + '/ci/downloadsoljson.sh', { encoding: 'utf8', cwd: process.cwd(), shell: true })
-  // show output
-  console.log(child)
+const minifierParallel = (() => {
+  const configuredParallel = Number(process.env.MINIFIER_PARALLEL)
+  if (Number.isInteger(configuredParallel) && configuredParallel > 0) return configuredParallel
+  return process.env.CI ? 2 : true
+})()
+
+// Emit the soljson.js compiler into the output without touching source files
+class EmitSoljsonPlugin {
+  apply(compiler) {
+    compiler.hooks.thisCompilation.tap('EmitSoljsonPlugin', (compilation) => {
+      const { sources, Compilation } = compiler.webpack
+      const RawSource = sources && sources.RawSource
+      compilation.hooks.processAssets.tapPromise(
+        { name: 'EmitSoljsonPlugin', stage: Compilation.PROCESS_ASSETS_STAGE_ADDITIONAL },
+        async () => {
+          const assetName = 'assets/js/soljson.js'
+          // Check if asset already exists to avoid conflicts
+          if (compilation.getAsset(assetName)) {
+            return
+          }
+          try {
+            const defaultVersion = require('../../package.json').defaultVersion
+            const url = `https://binaries.soliditylang.org/bin/${defaultVersion}`
+            const data = await new Promise((resolve, reject) => {
+              const https = require('https')
+              const request = https
+                .get(url, (res) => {
+                  if (res.statusCode !== 200) {
+                    reject(new Error(`Failed to download soljson.js (${res.statusCode})`))
+                    return
+                  }
+                  const chunks = []
+                  res.on('data', (c) => chunks.push(c))
+                  res.on('end', () => resolve(Buffer.concat(chunks)))
+                })
+                .on('error', reject)
+              request.setTimeout(15000, () => {
+                request.destroy(new Error(`Timed out downloading soljson.js from ${url}`))
+              })
+            })
+            if (RawSource) {
+              // Match previous public path: assets/js/soljson.js
+              compilation.emitAsset(assetName, new RawSource(data))
+            }
+          } catch (e) {
+            console.warn('EmitSoljsonPlugin: skipping emit due to error:', e.message)
+          }
+        }
+      )
+    })
+  }
 }
 
-fs.writeFileSync(__dirname + '/src/assets/version.json', JSON.stringify(versionData))
+// Emit version.json as part of the build instead of writing to source
+class EmitVersionJsonPlugin {
+  apply(compiler) {
+    compiler.hooks.thisCompilation.tap('EmitVersionJsonPlugin', (compilation) => {
+      const json = JSON.stringify(versionData)
+      const RawSource = compiler.webpack && compiler.webpack.sources && compiler.webpack.sources.RawSource
+      if (RawSource) {
+        compilation.emitAsset('assets/version.json', new RawSource(json))
+      }
+    })
+  }
+}
 
-
-loadLocalSolJson()
+// No-op external writes; emit soljson during compilation instead
 
 const project = fs.readFileSync(__dirname + '/project.json', 'utf8')
 
@@ -58,14 +114,17 @@ module.exports = composePlugins(withNx(), withReact(), (config) => {
     http: require.resolve('stream-http'),
     https: require.resolve('https-browserify'),
     constants: require.resolve('constants-browserify'),
-    os: false, //require.resolve("os-browserify/browser"),
+    os: require.resolve('os-browserify/browser'),
     timers: false, // require.resolve("timers-browserify"),
     zlib: require.resolve('browserify-zlib'),
     'assert/strict': require.resolve('assert/'),
-    fs: false,
+    async_hooks: false,
+    fs: path.resolve(__dirname, 'src/fs-shim.js'),
     module: false,
     tls: false,
     net: false,
+    http2: false,
+    dns: false,
     readline: false,
     child_process: false,
     buffer: require.resolve('buffer/'),
@@ -76,6 +135,10 @@ module.exports = composePlugins(withNx(), withReact(), (config) => {
   config.externals = {
     ...config.externals,
     solc: 'solc',
+    // Do not bundle Monaco: it's copied as static assets and loaded by @monaco-editor/react
+    'monaco-editor': 'monaco'
+    // NOTE: @langchain packages (@langchain/aws, /ollama, /openrouter, /core,
+    // /langgraph) MUST be bundled, not externalized
   }
 
   // uncomment this to enable react profiling
@@ -92,9 +155,24 @@ module.exports = composePlugins(withNx(), withReact(), (config) => {
   pkgVerkle = pkgVerkle.replace('"main": "./nodejs/rust_verkle_wasm.js",', '"main": "./web/rust_verkle_wasm.js",')
   fs.writeFileSync(path.resolve(__dirname, '../../node_modules/rust-verkle-wasm/package.json'), pkgVerkle)
 
+  // Prefer browser/Esm entry points where available
+  config.resolve.mainFields = ['browser', 'module', 'main']
+
+  // Honor the `browser` field remaps in package.json (object form) for the AWS SDK
+  config.resolve.aliasFields = ['browser']
+
   config.resolve.alias = {
     ...config.resolve.alias,
+    // Avoid bundling server-only deps or optional node paths
+    ws: false,
+    express: false,
+    'express-ws': false,
+    'web3-rpc-providers': false,
+    'async-limiter': false,
+    '@so-ric/colorspace': false,
     // 'rust-verkle-wasm$': path.resolve(__dirname, '../../node_modules/rust-verkle-wasm/web/run_verkle_wasm.js')
+    // Explicitly alias os to os-browserify for DeepAgent
+    'os': path.resolve(__dirname, '../../node_modules/os-browserify/browser.js')
   }
 
 
@@ -105,9 +183,9 @@ module.exports = composePlugins(withNx(), withReact(), (config) => {
     config.output.publicPath = '/'
   }
 
-  // set filename
-  config.output.filename = `[name].${versionData.version}.${versionData.timestamp}.js`
-  config.output.chunkFilename = `[name].${versionData.version}.${versionData.timestamp}.js`
+  // set deterministic filenames for better caching
+  config.output.filename = `[name].[contenthash].js`
+  config.output.chunkFilename = `[name].[contenthash].js`
 
   // add copy & provide plugin
   config.plugins.push(
@@ -120,6 +198,8 @@ module.exports = composePlugins(withNx(), withReact(), (config) => {
         ...copyPatterns
       ].filter(Boolean)
     }),
+    new EmitSoljsonPlugin(),
+    new EmitVersionJsonPlugin(),
     new CopyFileAfterBuild(),
     new webpack.ProvidePlugin({
       Buffer: ['buffer', 'Buffer'],
@@ -128,7 +208,87 @@ module.exports = composePlugins(withNx(), withReact(), (config) => {
     })
   )
 
-  // souce-map loader
+  // Optional: generate static bundle analysis when ANALYZE env var is set
+  if (process.env.ANALYZE) {
+    config.plugins.push(
+      new BundleAnalyzerPlugin({
+        analyzerMode: 'static',
+        openAnalyzer: false,
+        reportFilename: 'bundle-report.html',
+        generateStatsFile: true,
+        statsFilename: 'bundle-stats.json',
+      })
+    )
+  }
+
+  // set the define plugin to load the WALLET_CONNECT_PROJECT_ID
+  config.plugins.push(
+    new webpack.DefinePlugin({
+      WALLET_CONNECT_PROJECT_ID: JSON.stringify(process.env.WALLET_CONNECT_PROJECT_ID),
+      'process.env.NX_ENDPOINTS_URL': JSON.stringify(process.env.NX_ENDPOINTS_URL),
+      'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
+      'process.version': JSON.stringify('v18.0.0'),
+      'process.versions': JSON.stringify({ node: '18.0.0' })
+    })
+  )
+
+  // Ignore node: prefix imports and provide fallbacks
+  config.plugins.push(
+    new webpack.NormalModuleReplacementPlugin(/^node:/, (resource) => {
+      const module = resource.request.replace(/^node:/, '')
+
+      // Map node: prefixed modules to their polyfills or empty modules
+      const replacements = {
+        'fs': 'fs-mock',
+        'fs/promises': 'fs-mock',
+        'child_process': 'child-process-mock',
+        'worker_threads': 'worker-threads-mock',
+        'perf_hooks': 'perf-hooks-mock',
+        'async_hooks': 'async-hooks-mock',
+        'path': 'path-browserify',
+        'os': 'os-browserify/browser',
+        'crypto': 'crypto-browserify',
+        'stream': 'stream-browserify',
+        'util': 'util/',
+        'buffer': 'buffer/',
+      }
+
+      if (replacements[module] === 'fs-mock') {
+        // Use the fs-shim.js file which provides readFile via fetch for WASM loading
+        resource.request = path.resolve(__dirname, 'src/fs-shim.js')
+      } else if (replacements[module] === 'child-process-mock') {
+        resource.request = 'data:text/javascript,' + encodeURIComponent(`
+          export const spawn = () => { throw new Error('child_process not available in browser'); };
+          export const fork = () => { throw new Error('child_process not available in browser'); };
+          export const exec = () => { throw new Error('child_process not available in browser'); };
+          export default { spawn, fork, exec };
+        `)
+      } else if (replacements[module] === 'worker-threads-mock') {
+        resource.request = 'data:text/javascript,' + encodeURIComponent(`
+          export const Worker = class {};
+          export default { Worker };
+        `)
+      } else if (replacements[module] === 'perf-hooks-mock') {
+        resource.request = 'data:text/javascript,' + encodeURIComponent(`
+          export const performance = { now: () => Date.now() };
+          export default { performance };
+        `)
+      } else if (replacements[module] === 'async-hooks-mock') {
+        resource.request = 'data:text/javascript,' + encodeURIComponent(`
+          export class AsyncLocalStorage { constructor() {} run(store, callback, ...args) { return callback(...args); } getStore() { return undefined; } }
+          export const executionAsyncId = () => 0;
+          export const executionAsyncResource = () => ({});
+          export default { AsyncLocalStorage, executionAsyncId, executionAsyncResource };
+        `)
+      } else if (replacements[module]) {
+        resource.request = replacements[module]
+      } else {
+        resource.request = module
+      }
+    })
+  )
+
+  // source-map loader
   config.module.rules.push({
     test: /\.js$/,
     use: ['source-map-loader'],
@@ -140,7 +300,7 @@ module.exports = composePlugins(withNx(), withReact(), (config) => {
   // set minimizer
   config.optimization.minimizer = [
     new TerserPlugin({
-      parallel: true,
+      parallel: minifierParallel,
       terserOptions: {
         ecma: 2015,
         compress: false,
@@ -151,7 +311,9 @@ module.exports = composePlugins(withNx(), withReact(), (config) => {
       },
       extractComments: false
     }),
-    new CssMinimizerPlugin()
+    new CssMinimizerPlugin({
+      parallel: minifierParallel
+    })
   ]
 
   // minify code
@@ -159,10 +321,24 @@ module.exports = composePlugins(withNx(), withReact(), (config) => {
     config.optimization.minimize = true
 
   config.watchOptions = {
-    ignored: /node_modules/
+    ignored: /node_modules/,
+    aggregateTimeout: 300,
+    poll: false
   }
 
-  console.log('config', process.env.NX_DESKTOP_FROM_DIST)
+  // Reduce memory usage in development by using cheaper source maps
+  if (config.mode === 'development') {
+    config.devtool = 'eval-cheap-module-source-map'
+    // Disable caching if memory is an issue (trade-off: slower rebuilds)
+    // config.cache = false
+  }
+
+  // Allow ngrok and other tunneling services
+  config.devServer = {
+    ...config.devServer,
+    allowedHosts: 'all'
+  }
+
   return config;
 });
 
@@ -174,12 +350,6 @@ class CopyFileAfterBuild {
         // This copy the raw-loader files used by the etherscan plugin to the remix-ide root folder.
         // This is needed because by default the etherscan resources are served from the /plugins/etherscan/ folder,
         // but the raw-loader try to access the resources from the root folder.
-        const files = fs.readdirSync('./dist/apps/etherscan')
-        files.forEach((file) => {
-          if (file.includes('plugin-etherscan')) {
-            fs.copyFileSync('./dist/apps/etherscan/' + file, './dist/apps/remix-ide/' + file)
-          }
-        })
       } catch (e) {
         console.error('running CopyFileAfterBuild failed with error: ' + e.message)
       }

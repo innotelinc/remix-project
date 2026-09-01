@@ -3,7 +3,8 @@ import { CustomTooltip, CustomMenu, CustomIconsToggle } from '@remix-ui/helper'
 import { Dropdown, NavDropdown } from 'react-bootstrap'
 import { FormattedMessage } from 'react-intl'
 import { appPlatformTypes, platformContext } from '@remix-ui/app'
-const _paq = (window._paq = window._paq || [])
+import { TrackingContext } from '@remix-ide/tracking'
+import { MatomoEvent, FileExplorerEvent } from '@remix-api'
 
 export interface HamburgerMenuItemProps {
   hideOption: boolean
@@ -16,6 +17,10 @@ export interface HamburgerMenuItemProps {
 export function HamburgerMenuItem(props: HamburgerMenuItemProps) {
   const { hideOption } = props
   const platform = useContext(platformContext)
+  const { trackMatomoEvent: baseTrackEvent } = useContext(TrackingContext)
+  const trackMatomoEvent = <T extends MatomoEvent = FileExplorerEvent>(event: T) => {
+    baseTrackEvent?.<T>(event)
+  }
   const uid = 'workspace' + props.kind
   return (
     <>
@@ -27,10 +32,10 @@ export function HamburgerMenuItem(props: HamburgerMenuItemProps) {
               key={uid + '-fe-ws'}
               onClick={() => {
                 props.actionOnClick()
-                _paq.push(['trackEvent', 'fileExplorer', 'workspaceMenu', uid])
+                trackMatomoEvent({ category: 'fileExplorer', action: 'workspaceMenu', name: uid, isClick: true })
               }}
             >
-              <span hidden={hideOption} id={uid} data-id={uid} className={props.fa + ' pl-2'} style={{ width: '1.4rem' }}></span>
+              <span hidden={hideOption} id={uid} data-id={uid} className={props.fa + ' ps-2'} style={{ width: '1.4rem' }}></span>
               <span className="px-2">
                 {props.kind === 'create' ? <FormattedMessage id={'filePanel.createLabel'} /> :<FormattedMessage id={'filePanel.' + props.kind} />}
               </span>
@@ -44,6 +49,10 @@ export function HamburgerMenuItem(props: HamburgerMenuItemProps) {
 // keeping the following for a later use:
 export function NavHamburgerMenuItem(props: HamburgerMenuItemProps) {
   const { hideOption } = props
+  const { trackMatomoEvent: baseTrackEvent } = useContext(TrackingContext)
+  const trackMatomoEvent = <T extends MatomoEvent = FileExplorerEvent>(event: T) => {
+    baseTrackEvent?.<T>(event)
+  }
   const uid = 'workspace' + props.kind
   return (
     <>
@@ -54,10 +63,10 @@ export function NavHamburgerMenuItem(props: HamburgerMenuItemProps) {
             key={uid + '-fe-ws'}
             onClick={() => {
               props.actionOnClick()
-              _paq.push(['trackEvent', 'fileExplorer', 'workspaceMenu', uid])
+              trackMatomoEvent({ category: 'fileExplorer', action: 'workspaceMenu', name: uid, isClick: true })
             }}
           >
-            <span hidden={hideOption} id={uid} data-id={uid} className={props.fa + ' pl-2'} style={{ width: '1.4rem' }}></span>
+            <span hidden={hideOption} id={uid} data-id={uid} className={props.fa + ' ps-2'} style={{ width: '1.4rem' }}></span>
             <span className="px-2">
               <FormattedMessage id={'filePanel.' + props.kind} />
             </span>

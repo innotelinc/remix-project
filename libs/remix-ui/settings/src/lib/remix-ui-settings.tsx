@@ -1,37 +1,19 @@
 import { ViewPlugin } from '@remixproject/engine-web'
-import React, {useState, useRef, useReducer, useEffect, useCallback} from 'react' // eslint-disable-line
-import { CustomTooltip } from '@remix-ui/helper'
-const _paq = (window._paq = window._paq || [])
+import React, { useState, useReducer, useEffect, useContext, useMemo } from 'react' // eslint-disable-line
+import Fuse from 'fuse.js'
+import { EtherscanConfigDescription, GitHubCredentialsDescription, SindriCredentialsDescription, TheGraphConfigDescription, ZkVerifyCredentialsDescription } from '@remix-ui/helper'
+import { AppConfig, FeatureGroup } from '@remix-api'
+import { AppContext, useAuth } from '@remix-ui/app'
 
-import { AppModal, AlertModal, ModalTypes } from '@remix-ui/app'
-import { labels, textDark, textSecondary } from './constants'
-
-import './remix-ui-settings.css'
-import {
-  generateContractMetadat,
-  personal,
-  copilotActivate,
-  copilotMaxNewToken,
-  copilotTemperature,
-  textWrapEventAction,
-  useMatomoAnalytics,
-  saveTokenToast,
-  removeTokenToast,
-  saveSwarmSettingsToast,
-  saveIpfsSettingsToast,
-  useAutoCompletion,
-  useShowGasInEditor,
-  useDisplayErrors,
-  saveEnvState
-} from './settingsAction'
-import { initialState, toastInitialState, toastReducer, settingReducer } from './settingsReducer'
-import {Toaster} from '@remix-ui/toaster' // eslint-disable-line
-import { RemixUiThemeModule, ThemeModule } from '@remix-ui/theme-module'
-import { RemixUiLocaleModule, LocaleModule } from '@remix-ui/locale-module'
+import { initialState, settingReducer } from './settingsReducer'
+import { Toaster } from '@remix-ui/toaster' // eslint-disable-line
+import { ThemeModule } from '@remix-ui/theme-module'
+import { ThemeContext, themes } from '@remix-ui/home-tab'
 import { FormattedMessage, useIntl } from 'react-intl'
-import { GithubSettings } from './github-settings'
-import { EtherscanSettings } from './etherscan-settings'
-import { SindriSettings } from './sindri-settings'
+import { Registry, QueryParams } from '@remix-project/remix-lib'
+import { SettingsSectionUI } from './settings-section'
+import { SettingsSection } from '../types'
+import './remix-ui-settings.css'
 
 /* eslint-disable-next-line */
 export interface RemixUiSettingsProps {
@@ -39,595 +21,570 @@ export interface RemixUiSettingsProps {
   config: any
   editor: any
   _deps: any
-  useMatomoAnalytics: boolean
+  useMatomoPerfAnalytics: boolean
   useCopilot: boolean
   themeModule: ThemeModule
-  localeModule: LocaleModule
 }
 
+const settingsConfig = Registry.getInstance().get('settingsConfig').api
+const settingsSections: SettingsSection[] = [
+  {
+    key: 'general',
+    label: 'settings.generalSettings',
+    description: 'settings.generalSettingsDescription',
+    subSections: [
+      {
+        title: 'settings.appearanceSection',
+        options: [{
+          name: 'theme',
+          label: 'settings.theme',
+          type: 'select',
+          selectOptions: settingsConfig.themes.map((theme) => ({
+            label: theme.name + ' (' + theme.quality + ')',
+            value: theme.name
+          }))
+        }]
+      },
+      {
+        title: 'settings.codeEditorSection',
+        options: [{
+          name: 'generate-contract-metadata',
+          label: 'settings.generateContractMetadataText',
+          description: 'settings.generateContractMetadataTooltip',
+          type: 'toggle'
+        }, {
+          name: 'auto-completion',
+          label: 'settings.useAutoCompleteText',
+          type: 'toggle'
+        }, {
+          name: 'show-gas',
+          label: 'settings.useShowGasInEditorText',
+          type: 'toggle'
+        }, {
+          name: 'display-errors',
+          label: 'settings.displayErrorsText',
+          type: 'toggle'
+        }, {
+          name: 'text-wrap',
+          label: 'settings.wordWrapText',
+          type: 'toggle'
+        }, {
+          name: 'editor/code-analysis-popover' as keyof typeof initialState,
+          label: 'settings.editorCodeAnalysisPopover',
+          description: 'settings.editorCodeAnalysisPopoverDescription',
+          type: 'toggle' as const
+        }, {
+          name: 'personal-mode',
+          label: 'settings.enablePersonalModeText',
+          labelIcon: 'ms-1 fa fa-exclamation-triangle text-warning',
+          labelIconTooltip: 'settings.enablePersonalModeTooltip',
+          type: 'toggle'
+        }, {
+          name: 'save-evm-state',
+          label: 'settings.enableSaveEnvState',
+          type: 'toggle'
+        }]
+      }
+    ]
+  },
+  {
+    key: 'account',
+    label: 'settings.account',
+    description: 'settings.accountDescription',
+    requiresAuth: true, // Special flag for auth-required sections
+    subSections: [
+      {
+        title: 'settings.profileSection',
+        options: [{
+          name: 'profile-section',
+          label: '',
+          type: 'custom' as const,
+          customComponent: 'profileSection'
+        }]
+      },
+      {
+        title: 'settings.creditsBalanceSection',
+        options: [{
+          name: 'credits-balance',
+          label: '',
+          type: 'custom' as const,
+          customComponent: 'creditsBalance'
+        }]
+      },
+      {
+        title: 'settings.connectedAccountsSection',
+        description: 'settings.connectedAccountsDescription',
+        options: [{
+          name: 'connected-accounts',
+          label: '',
+          type: 'custom' as const,
+          customComponent: 'connectedAccounts'
+        }]
+      }
+    ]
+  },
+  {
+    key: 'analytics', label: 'settings.analytics', description: 'settings.analyticsDescription', subSections: [
+      {
+        options: [{
+          name: 'matomo-analytics',
+          label: 'settings.matomoAnalyticsNoCookies',
+          headerClass: 'text-secondary',
+          type: 'toggle',
+          description: 'settings.matomoAnalyticsNoCookiesDescription',
+        }, {
+          name: 'matomo-perf-analytics',
+          label: 'settings.matomoAnalyticsWithCookies',
+          type: 'toggle',
+          description: 'settings.matomoAnalyticsWithCookiesDescription',
+          footnote: {
+            text: 'settings.manageCookiePreferences',
+            link: 'https://matomo.org/',
+            styleClass: 'text-primary'
+          }
+        }]
+      }
+    ]
+  },
+  {
+    key: 'ai', label: 'settings.ai', description: 'settings.aiDescription', subSections: [
+      {
+        options: [{
+          name: 'copilot/suggest/activate',
+          label: 'settings.aiCopilot',
+          description: 'settings.aiCopilotDescription',
+          type: 'toggle',
+          footnote: {
+            text: 'settings.learnMoreAiCopilot',
+            link: 'https://remix-ide.readthedocs.io/en/latest/ai.html',
+            styleClass: 'text-primary'
+          }
+        },
+        {
+          name: 'ai-privacy-policy',
+          label: 'settings.aiPrivacyPolicy',
+          description: 'settings.aiPrivacyPolicyDescription',
+          type: 'button',
+          buttonOptions: {
+            label: 'settings.viewPrivacyPolicy',
+            action: 'link',
+            link: 'https://remix-ide.readthedocs.io/en/latest/ai.html'
+          }
+        },
+        // Ollama configuration is temporarily disabled - will be enabled later
+        // {
+        //   name: 'ollama-config',
+        //   label: 'settings.ollamaConfig',
+        //   description: 'settings.ollamaConfigDescription',
+        //   type: 'toggle',
+        //   toggleUIOptions: [{
+        //     name: 'ollama-endpoint',
+        //     type: 'text'
+        //   }]
+        // }
+        ]
+      },
+      {
+        title: 'settings.aiFeedbackSection',
+        options: [{
+          name: 'ai-feedback',
+          label: 'settings.aiFeedback',
+          description: 'settings.aiFeedbackDescription',
+          type: 'toggle',
+          toggleUIOptions: [{
+            name: 'ai-feedback-credit-threshold',
+            type: 'number'
+          }]
+        }]
+      },
+      {
+        title: 'settings.mcpServersSection',
+        options: [{
+          name: 'mcp/servers/enable' as keyof typeof initialState,
+          label: 'settings.enableMCPEnhancement',
+          description: 'settings.enableMCPEnhancementDescription',
+          type: 'toggle' as const,
+          footnote: {
+            text: 'settings.learnMoreMcp',
+            link: 'https://modelcontextprotocol.io/',
+            styleClass: 'text-primary'
+          }
+        },
+        {
+          name: 'mcp-server-management' as keyof typeof initialState,
+          label: 'settings.mcpServerConfiguration',
+          description: 'settings.mcpServerConfigurationDescription',
+          type: 'custom' as const,
+          customComponent: 'mcpServerManager'
+        }]
+      },
+      {
+        title: 'settings.deepAgentApiKeysSection',
+        options: [{
+          name: 'deepagent-api-keys-config' as keyof typeof initialState,
+          label: 'settings.useOwnApiKeys',
+          description: 'settings.useOwnApiKeysDescription',
+          type: 'toggle' as const,
+          toggleUIOptions: [{
+            name: 'deepagent-openrouter-api-key' as keyof typeof initialState,
+            type: 'password'
+          }, {
+            name: 'deepagent-bedrock-bearer-token' as keyof typeof initialState,
+            type: 'password'
+          }]
+        }]
+      }]
+  },
+  {
+    key: 'services', label: 'settings.services', description: 'settings.servicesDescription', subSections: [
+      {
+        options: [{
+          name: 'github-config',
+          label: 'settings.gitAccessTokenTitle',
+          type: 'toggle',
+          toggleUIDescription: <GitHubCredentialsDescription />,
+          toggleUIOptions: [{
+            name: 'gist-access-token',
+            type: 'password'
+          }, {
+            name: 'github-user-name',
+            type: 'text'
+          }, {
+            name: 'github-email',
+            type: 'text'
+          }]
+        }, {
+          name: 'ipfs-config',
+          label: 'settings.ipfs',
+          type: 'toggle',
+          toggleUIOptions: [{
+            name: 'ipfs-url',
+            type: 'text'
+          }, {
+            name: 'ipfs-protocol',
+            type: 'text'
+          }, {
+            name: 'ipfs-port',
+            type: 'text'
+          }, {
+            name: 'ipfs-project-id',
+            type: 'text'
+          }, {
+            name: 'ipfs-project-secret',
+            type: 'text'
+          }]
+        }, {
+          name: 'swarm-config',
+          label: 'settings.swarm',
+          type: 'toggle',
+          toggleUIOptions: [{
+            name: 'swarm-private-bee-address',
+            type: 'text'
+          }, {
+            name: 'swarm-postage-stamp-id',
+            type: 'text'
+          }]
+        }, {
+          name: 'sindri-config',
+          label: 'settings.sindriAccessTokenTitle',
+          type: 'toggle',
+          toggleUIDescription: <SindriCredentialsDescription />,
+          toggleUIOptions: [{
+            name: 'sindri-access-token',
+            type: 'password'
+          }]
+        }, {
+          name: 'etherscan-config',
+          label: 'settings.etherscanTokenTitle',
+          type: 'toggle',
+          toggleUIDescription: <EtherscanConfigDescription />,
+          toggleUIOptions: [{
+            name: 'etherscan-access-token',
+            type: 'password'
+          }]
+        }, {
+          name: 'thegraph-config',
+          label: 'settings.thegraphTokenTitle',
+          type: 'toggle',
+          toggleUIDescription: <TheGraphConfigDescription />,
+          toggleUIOptions: [{
+            name: 'thegraph-access-token',
+            type: 'password'
+          }]
+        }, {
+          name: 'zkverify-config',
+          label: 'settings.zkverifyTitle',
+          type: 'toggle',
+          toggleUIDescription: <ZkVerifyCredentialsDescription />,
+          toggleUIOptions: [{
+            name: 'zkverify-api-key',
+            type: 'password'
+          }, {
+            name: 'zkverify-network',
+            type: 'select',
+            selectOptions: [
+              { label: 'Testnet', value: 'testnet' },
+              { label: 'Mainnet', value: 'mainnet' }
+            ]
+          }]
+        }]
+      }]
+  }
+]
+
 export const RemixUiSettings = (props: RemixUiSettingsProps) => {
-  const [, dispatch] = useReducer(settingReducer, initialState)
-  const [state, dispatchToast] = useReducer(toastReducer, toastInitialState)
-  const [tokenValue, setTokenValue] = useState({}) // eslint-disable-line @typescript-eslint/no-unused-vars
-  const [themeName] = useState('')
-  const [privateBeeAddress, setPrivateBeeAddress] = useState('')
-  const [postageStampId, setPostageStampId] = useState('')
-  const [resetState, refresh] = useState(0)
-  const [ipfsUrl, setipfsUrl] = useState('')
-  const [ipfsPort, setipfsPort] = useState('')
-  const [ipfsProtocol, setipfsProtocol] = useState('')
-  const [ipfsProjectId, setipfsProjectId] = useState('')
-  const [ipfsProjectSecret, setipfsProjectSecret] = useState('')
-
+  const appContext = useContext(AppContext)
+  const appConfig = appContext?.appConfig || {}
   const intl = useIntl()
-  const initValue = () => {
-    const metadataConfig = props.config.get('settings/generate-contract-metadata')
-    if (metadataConfig === undefined || metadataConfig === null) generateContractMetadat(props.config, true, dispatch)
+  const { features } = useAuth()
+  const [settingsState, dispatch] = useReducer(settingReducer, initialState)
+  const [selected, setSelected] = useState(settingsSections[0].key)
+  const [search, setSearch] = useState('')
+  const [filteredSections, setFilteredSections] = useState<SettingsSection[]>(settingsSections)
+  const [filteredSection, setFilteredSection] = useState<SettingsSection>(settingsSections[0])
+  const [state, setState] = useState<{
+    themeQuality: { filter: string; name: string }
+  }>({
+    themeQuality: themes.light
+  })
+  const [visibleSections, setVisibleSections] = useState<SettingsSection[]>(settingsSections)
+  const [featureGroups, setFeatureGroups] = useState<FeatureGroup[]>([])
 
-    const useAutoComplete = props.config.get('settings/auto-completion')
-    if (useAutoComplete === null || useAutoComplete === undefined) useAutoCompletion(props.config, true, dispatch)
+  // Check if user can use their own API keys based on their plan
+  const canUseOwnApiKeys = useMemo(() => {
+    return features['ai:api-key']?.is_enabled === true
+  }, [features, featureGroups])
 
-    const displayErrors = props.config.get('settings/display-errors')
-    if (displayErrors === null || displayErrors === undefined) useDisplayErrors(props.config, true, dispatch)
+  // Check if user has access to contextual editor feature (code analysis popover)
+  const hasContextualEditorFeature = useMemo(() => {
+    return features['ai:contextual-editor']?.is_enabled === true
+  }, [features])
 
-    const useShowGas = props.config.get('settings/show-gas')
-    if (useShowGas === null || useShowGas === undefined) useShowGasInEditor(props.config, true, dispatch)
-
-    const enableSaveEnvState = props.config.get('settings/save-evm-state')
-    if (enableSaveEnvState === null || enableSaveEnvState === undefined) saveEnvState(props.config, true, dispatch)
-  }
-  useEffect(() => initValue(), [resetState, props.config])
-  useEffect(() => initValue(), [])
-
+  // Fetch user's feature groups on mount (for API keys feature)
   useEffect(() => {
-    const token = props.config.get('settings/' + labels['gist'].key)
-    if (token) {
-      setTokenValue((prevState) => {
-        return { ...prevState, gist: token }
+    const fetchFeatureGroups = async () => {
+      try {
+        const permissions = await props.plugin.call('auth', 'getAllPermissions')
+        if (permissions?.feature_groups) {
+          setFeatureGroups(permissions.feature_groups)
+        } else {
+          setFeatureGroups([])
+        }
+      } catch (error) {
+        console.warn('[Settings] Failed to fetch feature groups:', error)
+        setFeatureGroups([])
+      }
+    }
+    fetchFeatureGroups()
+
+    // Listen for auth changes to update feature groups
+    const handleAuthChange = async () => {
+      await fetchFeatureGroups()
+    }
+    props.plugin.on('auth', 'authStateChanged', handleAuthChange)
+
+    return () => {
+      try {
+        props.plugin.off('auth', 'authStateChanged')
+      } catch (e) {
+        console.log(e)
+      }
+    }
+  }, [props.plugin])
+
+  // Derive visible sections based on app config and user permissions
+  const computeVisibleSections = (config: AppConfig, canUseApiKeys: boolean, hasContextualEditor: boolean): SettingsSection[] => {
+    return settingsSections
+      .filter(section => {
+        if (section.key === 'account' && config['settings.account_management'] === false) {
+          return false
+        }
+        return true
       })
-    }
-
-    const etherscantoken = props.config.get('settings/' + labels['etherscan'].key)
-    if (etherscantoken) {
-      setTokenValue((prevState) => {
-        return { ...prevState, etherscan: etherscantoken }
-      })
-    }
-    const configPrivateBeeAddress = props.config.get('settings/swarm-private-bee-address')
-    if (configPrivateBeeAddress) {
-      setPrivateBeeAddress(configPrivateBeeAddress)
-    }
-    const configPostageStampId = props.config.get('settings/swarm-postage-stamp-id')
-    if (configPostageStampId) {
-      setPostageStampId(configPostageStampId)
-    }
-
-    const configipfsUrl = props.config.get('settings/ipfs-url')
-    if (configipfsUrl) {
-      setipfsUrl(configipfsUrl)
-    }
-    const configipfsPort = props.config.get('settings/ipfs-port')
-    if (configipfsPort) {
-      setipfsPort(configipfsPort)
-    }
-    const configipfsProtocol = props.config.get('settings/ipfs-protocol')
-    if (configipfsProtocol) {
-      setipfsProtocol(configipfsProtocol)
-    }
-    const configipfsProjectId = props.config.get('settings/ipfs-project-id')
-    if (configipfsProjectId) {
-      setipfsProjectId(configipfsProjectId)
-    }
-    const configipfsProjectSecret = props.config.get('settings/ipfs-project-secret')
-    if (configipfsProjectSecret) {
-      setipfsProjectSecret(configipfsProjectSecret)
-    }
-  }, [themeName, state.message])
-
-  useEffect(() => {
-    if (props.useMatomoAnalytics !== null) useMatomoAnalytics(props.config, props.useMatomoAnalytics, dispatch)
-  }, [props.useMatomoAnalytics])
-
-  const onchangeGenerateContractMetadata = (event) => {
-    generateContractMetadat(props.config, event.target.checked, dispatch)
-  }
-
-  const textWrapEvent = (event) => {
-    textWrapEventAction(props.config, props.editor, event.target.checked, dispatch)
-  }
-
-  const onchangeCopilotActivate = () => {
-    if (!props.useCopilot) {
-      copilotActivate(props.config, props.useCopilot, dispatch)
-      return
-    }
-
-    const startCopilot = async () => {
-      copilotActivate(props.config, props.useCopilot, dispatch)
-    }
-
-    startCopilot()
-  }
-
-  useEffect(() => {
-    if (props.useCopilot !== null) copilotActivate(props.config, props.useCopilot, dispatch)
-    onchangeCopilotActivate()
-  }, [props.useCopilot])
-
-  const onchangeCopilotMaxNewToken = (event) => {
-    copilotMaxNewToken(props.config, parseInt(event.target.value), dispatch)
-  }
-
-  const onchangeCopilotTemperature = (event) => {
-    copilotTemperature(props.config, parseInt(event.target.value) / 100, dispatch)
-  }
-
-  const onchangePersonal = (event) => {
-    personal(props.config, event.target.checked, dispatch)
-  }
-
-  const onchangeMatomoAnalytics = (event) => {
-    useMatomoAnalytics(props.config, event.target.checked, dispatch)
-  }
-
-  const onchangeUseAutoComplete = (event) => {
-    useAutoCompletion(props.config, event.target.checked, dispatch)
-  }
-
-  const onchangeShowGasInEditor = (event) => {
-    useShowGasInEditor(props.config, event.target.checked, dispatch)
-  }
-  const onchangeDisplayErrors = (event) => {
-    useDisplayErrors(props.config, event.target.checked, dispatch)
-  }
-
-  const onchangeSaveEnvState= (event) => {
-    saveEnvState(props.config, event.target.checked, dispatch)
-  }
-
-  const getTextClass = (key) => {
-    if (props.config.get(key)) {
-      return textDark
-    } else {
-      return textSecondary
-    }
-  }
-
-  const generalConfig = () => {
-    const isMetadataChecked = props.config.get('settings/generate-contract-metadata') || false
-    const isEditorWrapChecked = props.config.get('settings/text-wrap') || false
-    const isPersonalChecked = props.config.get('settings/personal-mode') || false
-    const isMatomoChecked = props.config.get('settings/matomo-analytics') || false
-
-    const isAutoCompleteChecked = props.config.get('settings/auto-completion') || false
-    const isShowGasInEditorChecked = props.config.get('settings/show-gas') || false
-    const displayErrorsChecked = props.config.get('settings/display-errors') || false
-    const isSaveEvmStateChecked = props.config.get('settings/save-evm-state') || false
-    return (
-      <div className="$border-top">
-        <div className="d-flex justify-content-end pr-4">
-          <button
-            className="btn btn-sm btn-secondary ml-2"
-            onClick={() => {
-              try {
-                if ((window as any).remixFileSystem.name === 'indexedDB') {
-                  props.config.clear()
-                  try {
-                    localStorage.clear() // remove the whole storage
-                  } catch (e) {
-                    console.log(e)
-                  }
-                } else {
-                  props.config.clear() // remove only the remix settings
+      .map(section => {
+        // For AI section, filter out the deepagent-api-keys subsection if user can't use own API keys
+        if (section.key === 'ai' && !canUseApiKeys) {
+          return {
+            ...section,
+            subSections: section.subSections.filter(
+              subSection => subSection.title !== 'settings.deepAgentApiKeysSection'
+            )
+          }
+        }
+        // For General section, filter code analysis popover based on permission flag
+        if (section.key === 'general') {
+          return {
+            ...section,
+            subSections: section.subSections.map(subSection => ({
+              ...subSection,
+              options: subSection.options.filter(option => {
+                // Filter out code analysis popover if user doesn't have the feature
+                //@ts-ignore
+                if (!hasContextualEditor && option.name === 'editor/code-analysis-popover') {
+                  return false
                 }
-                refresh(resetState + 1)
-              } catch (e) {
-                console.log(e)
-              }
-            }}
-          >
-            <FormattedMessage id="settings.reset" />
-          </button>
-        </div>
-        <div className="card-body pt-3 pb-2">
-          <h6 className="card-title">
-            <FormattedMessage id="settings.general" />
-          </h6>
-          <div className="mt-2 custom-control custom-checkbox mb-1">
-            <input
-              onChange={onchangeGenerateContractMetadata}
-              id="generatecontractmetadata"
-              data-id="settingsTabGenerateContractMetadata"
-              type="checkbox"
-              className="custom-control-input"
-              name="contractMetadata"
-              checked={isMetadataChecked}
-            />
-            <label
-              className={`form-check-label custom-control-label align-middle ${getTextClass('settings/generate-contract-metadata')}`}
-              data-id="settingsTabGenerateContractMetadataLabel"
-              htmlFor="generatecontractmetadata"
-            >
-              <FormattedMessage id="settings.generateContractMetadataText" />
-              <CustomTooltip
-                placement="auto"
-                tooltipId="settings-tooltip-metadata"
-                tooltipText={intl.formatMessage({ id: 'settings.generateContractMetadataTooltip' })}
-              >
-                <i className="ml-1 far fa-info-circle"></i>
-              </CustomTooltip>
-            </label>
-          </div>
-          <div className="mt-2 custom-control custom-checkbox mb-1">
-            <input id="editorWrap" className="custom-control-input" type="checkbox" onChange={textWrapEvent} checked={isEditorWrapChecked} />
-            <label className={`form-check-label custom-control-label align-middle ${getTextClass('settings/text-wrap')}`} htmlFor="editorWrap">
-              <FormattedMessage id="settings.wordWrapText" />
-            </label>
-          </div>
-          <div className="custom-control custom-checkbox mb-1">
-            <input onChange={onchangeUseAutoComplete} id="settingsUseAutoComplete" type="checkbox" className="custom-control-input" checked={isAutoCompleteChecked} />
-            <label
-              className={`form-check-label custom-control-label align-middle ${getTextClass('settings/auto-completion')}`}
-              data-id="settingsAutoCompleteLabel"
-              htmlFor="settingsUseAutoComplete"
-            >
-              <span>
-                <FormattedMessage id="settings.useAutoCompleteText" />
-              </span>
-            </label>
-          </div>
-          <div className="custom-control custom-checkbox mb-1">
-            <input onChange={onchangeShowGasInEditor} id="settingsUseShowGas" type="checkbox" className="custom-control-input" checked={isShowGasInEditorChecked} />
-            <label
-              className={`form-check-label custom-control-label align-middle ${getTextClass('settings/show-gas')}`}
-              data-id="settingsShowGasLabel"
-              htmlFor="settingsUseShowGas"
-            >
-              <span>
-                <FormattedMessage id="settings.useShowGasInEditorText" />
-              </span>
-            </label>
-          </div>
-          <div className="custom-control custom-checkbox mb-1">
-            <input onChange={onchangeDisplayErrors} id="settingsDisplayErrors" type="checkbox" className="custom-control-input" checked={displayErrorsChecked} />
-            <label
-              className={`form-check-label custom-control-label align-middle ${getTextClass('settings/display-errors')}`}
-              data-id="displayErrorsLabel"
-              htmlFor="settingsDisplayErrors"
-            >
-              <span>
-                <FormattedMessage id="settings.displayErrorsText" />
-              </span>
-            </label>
-          </div>
-          <div className="custom-control custom-checkbox mb-1">
-            <input onChange={onchangePersonal} id="personal" type="checkbox" className="custom-control-input" checked={isPersonalChecked} />
-            <label className={`form-check-label custom-control-label align-middle ${getTextClass('settings/personal-mode')}`} htmlFor="personal">
-              <FormattedMessage id="settings.enablePersonalModeText" />
-              <CustomTooltip
-                placement="auto"
-                tooltipId="settings-tooltip-personalMode"
-                tooltipText={intl.formatMessage({ id: 'settings.enablePersonalModeTooltip' })}
-              >
-                <i className="ml-1 fas fa-exclamation-triangle text-warning" aria-hidden="true"></i>
-              </CustomTooltip>
-            </label>
-          </div>
-          <div className="custom-control custom-checkbox mb-1">
-            <input onChange={onchangeMatomoAnalytics} id="settingsMatomoAnalytics" type="checkbox" className="custom-control-input" checked={isMatomoChecked} />
-            <label className={`form-check-label custom-control-label align-middle ${getTextClass('settings/matomo-analytics')}`} htmlFor="settingsMatomoAnalytics">
-              <span>
-                <FormattedMessage id="settings.matomoAnalytics" />
-              </span>
-              <a href="https://medium.com/remix-ide/help-us-improve-remix-ide-66ef69e14931" target="_blank">
-                {' '}
-                <FormattedMessage id="settings.analyticsInRemix" />
-              </a>{' '}
-              <span>&</span>{' '}
-              <a target="_blank" href="https://matomo.org/free-software">
-                Matomo
-              </a>
-              <CustomTooltip
-                placement="auto"
-                tooltipId="settings-tooltip-matomo"
-                tooltipText={intl.formatMessage({ id: 'settings.matomoAnalyticsTooltip' })}
-              >
-                <i className="ml-1 far fa-info-circle"></i>
-              </CustomTooltip>
-            </label>
-          </div>
-          <div className="custom-control custom-checkbox mb-1">
-            <input onChange={onchangeSaveEnvState} id="settingsEnableSaveEnvState" data-id="settingsEnableSaveEnvState" type="checkbox" className="custom-control-input" checked={isSaveEvmStateChecked} />
-            <label
-              className={`form-check-label custom-control-label align-middle ${getTextClass('settings/save-evm-state')}`}
-              data-id="settingsEnableSaveEnvStateLabel"
-              htmlFor="settingsEnableSaveEnvState"
-            >
-              <span>
-                <FormattedMessage id="settings.enableSaveEnvState" />
-              </span>
-            </label>
-          </div>
-        </div>
-      </div>
-    )
+                return true
+              })
+            }))
+          }
+        }
+        return section
+      })
   }
 
-  // swarm settings
-  const handleSavePrivateBeeAddress = useCallback(
-    (event) => {
-      setPrivateBeeAddress(event.target.value)
-    },
-    [privateBeeAddress]
-  )
+  // Recompute visible sections when shared app config or permissions change
+  useEffect(() => {
+    const sections = computeVisibleSections(appConfig, canUseOwnApiKeys, hasContextualEditorFeature)
+    setVisibleSections(sections)
+    setFilteredSections(sections)
+    if (!sections.find(s => s.key === selected)) {
+      setSelected(sections[0]?.key)
+      setFilteredSection(sections[0])
+    }
+  }, [appConfig, canUseOwnApiKeys, hasContextualEditorFeature])
 
-  const handleSavePostageStampId = useCallback(
-    (event) => {
-      setPostageStampId(event.target.value)
-    },
-    [postageStampId]
-  )
+  useEffect(() => {
+    props.plugin.call('theme', 'currentTheme').then((theme) => {
+      setState((prevState) => {
+        return {
+          ...prevState,
+          themeQuality: theme.quality === 'dark' ? themes.dark : themes.light
+        }
+      })
+    })
 
-  const saveSwarmSettings = () => {
-    saveSwarmSettingsToast(props.config, dispatchToast, privateBeeAddress, postageStampId)
-  }
+    props.plugin.on('theme', 'themeChanged', (theme: any) => {
+      setState((prevState) => {
+        dispatch({ type: 'SET_VALUE', payload: { name: 'theme', value: theme.name } })
+        return {
+          ...prevState,
+          themeQuality: theme.quality === 'dark' ? themes.dark : themes.light
+        }
+      })
 
-  const swarmSettings = () => (
-    <div className="border-top">
-      <div className="card-body pt-3 pb-2">
-        <h6 className="card-title">
-          <FormattedMessage id="settings.swarm" />
-        </h6>
-        <div className="pt-2 pt-2 mb-0 pb-0">
-          <label className="m-0">
-            <FormattedMessage id="settings.privateBeeAddress" />:
-          </label>
-          <div className="text-secondary mb-0 h6">
-            <input id="swarmprivatebeeaddress" data-id="settingsPrivateBeeAddress" className="form-control" onChange={handleSavePrivateBeeAddress} value={privateBeeAddress} />
-          </div>
-        </div>
-        <div className="pt-2 mb-0 pb-0">
-          <label className="m-0">
-            <FormattedMessage id="settings.postageStampID" />:
-          </label>
-          <div className="text-secondary mb-0 h6">
-            <input id="swarmpostagestamp" data-id="settingsPostageStampId" className="form-control" onChange={handleSavePostageStampId} value={postageStampId} />
-            <div className="d-flex justify-content-end pt-2"></div>
-          </div>
-        </div>
-        <div className="d-flex justify-content-end pt-2">
-          <input
-            className="btn btn-sm btn-primary ml-2"
-            id="saveswarmsettings"
-            data-id="settingsTabSaveSwarmSettings"
-            onClick={() => saveSwarmSettings()}
-            value={intl.formatMessage({ id: 'settings.save' })}
-            type="button"
-            disabled={privateBeeAddress === ''}
-          ></input>
-        </div>
-      </div>
-    </div>
-  )
+    })
 
-  // ipfs settings
+    props.plugin.on('settings', 'copilotChoiceUpdated', (isChecked: any) => {
+      dispatch({ type: 'SET_VALUE', payload: { name: 'copilot/suggest/activate', value: isChecked } })
+    })
 
-  const handleSaveIpfsProjectId = useCallback(
-    (event) => {
-      setipfsProjectId(event.target.value)
-    },
-    [ipfsProjectId]
-  )
+    props.plugin.on('settings', 'matomoPerfAnalyticsChoiceUpdated', (isChecked: any) => {
+      dispatch({ type: 'SET_VALUE', payload: { name: 'matomo-perf-analytics', value: isChecked } })
+    })
 
-  const handleSaveIpfsSecret = useCallback(
-    (event) => {
-      setipfsProjectSecret(event.target.value)
-    },
-    [ipfsProjectSecret]
-  )
+    // Listen for plugin event to open a specific settings section
+    const onOpenSection = ({ sectionKey }: { sectionKey: string }) => {
+      // Validate section key exists; fallback to 'general'
+      const keys = settingsSections.map(s => s.key)
+      const target = keys.includes(sectionKey) ? sectionKey : 'general'
+      setSelected(target)
+      const section = settingsSections.find(s => s.key === target)
+      if (section) setFilteredSection(section)
+    }
 
-  const handleSaveIpfsUrl = useCallback(
-    (event) => {
-      setipfsUrl(event.target.value)
-    },
-    [ipfsUrl]
-  )
+    props.plugin.on('settings', 'openSection', onOpenSection)
 
-  const handleSaveIpfsPort = useCallback(
-    (event) => {
-      setipfsPort(event.target.value)
-    },
-    [ipfsPort]
-  )
+    return () => {
+      try {
+        props.plugin.off('settings', 'openSection')
+      } catch (e) {
+        console.log(e)
+      }
+    }
 
-  const handleSaveIpfsProtocol = useCallback(
-    (event) => {
-      setipfsProtocol(event.target.value)
-    },
-    [ipfsProtocol]
-  )
+  }, [])
 
-  const saveIpfsSettings = () => {
-    saveIpfsSettingsToast(props.config, dispatchToast, ipfsUrl, ipfsProtocol, ipfsPort, ipfsProjectId, ipfsProjectSecret)
-  }
+  useEffect(() => {
+    if (search.length > 0) {
+      const fuseTopLevel = new Fuse(visibleSections, {
+        threshold: 0.1,
+        keys: ['label', 'description', 'subSections.label', 'subSections.description', 'subSections.options.label', 'subSections.options.description', 'subSections.options.selectOptions.label', 'subSections.options.footnote.text']
+      })
+      const sectionResults = fuseTopLevel.search(search)
+      const resultItems = sectionResults.map((result, index) => {
+        if (index === 0) {
+          const fuseLowLevel = new Fuse(result.item.subSections, {
+            threshold: 0.1,
+            keys: ['title', 'options.label', 'options.description', 'options.selectOptions.label', 'options.footnote.text']
+          })
+          const subSectionResults = fuseLowLevel.search(search)
+          const filtSection = Object.assign({}, filteredSection, result.item)
 
-  const isCopilotActivated = props.config.get('settings/copilot/suggest/activate') || false
-  let copilotMaxnewToken = props.config.get('settings/copilot/suggest/max_new_tokens')
-  if (!copilotMaxnewToken) {
-    props.config.set('settings/copilot/suggest/max_new_tokens', 10)
-    copilotMaxnewToken = 10
-  }
-  let copilotTemperatureValue = (props.config.get('settings/copilot/suggest/temperature')) * 100
-  if (!copilotTemperatureValue) {
-    props.config.set('settings/copilot/suggest/temperature', 0.9)
-    copilotTemperatureValue = 0.9
-  }
-
-  const copilotSettings = () => (
-    <div className="border-top">
-      <div className="card-body pt-3 pb-2">
-        <h6 className="card-title d-inline">
-          <FormattedMessage id="settings.copilot" />
-        </h6>
-        <CustomTooltip placement="bottom" tooltipId="overlay-tooltip-aiDocumentation" tooltipText={<FormattedMessage id="remixUiTabs.tooltipText8" />}>
-          <span
-            data-id="remix_ai_docs"
-            id="remix_ai_docs"
-            className="btn pl-2 pr-0 py-0 d-inline ai-docs"
-            role='link'
-            onClick={()=>{
-              window.open("https://remix-ide.readthedocs.io/en/latest/ai.html")
-              _paq.push(['trackEvent', 'ai', 'solcoder', 'documentation'])
-            }}
-          >
-            <i aria-hidden="true" className="fas fa-book"></i>
-          </span>
-        </CustomTooltip>
-
-        <div className="pt-2 mb-0">
-          <div className="text-secondary mb-0 h6">
-            <div>
-              <div className="mb-1">
-                <label className={`form-check-label align-middle ${getTextClass('settings/copilot/suggest/max_new_tokens')}`} htmlFor="copilot-activate">
-                  <FormattedMessage id="settings.copilot.max_new_tokens" /> - <span>{copilotMaxnewToken}</span>
-                </label>
-                <input onChange={onchangeCopilotMaxNewToken} id="copilot-max-new-token" value={copilotMaxnewToken} min='1' max='150' type="range" className="custom-range" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="pt-2 mb-0">
-          <div className="text-secondary mb-0 h6">
-            <div>
-              <div className="mb-1">
-                <label className={`form-check-label align-middle ${getTextClass('settings/copilot/suggest/temperature')}`} htmlFor="copilot-activate">
-                  <FormattedMessage id="settings.copilot.temperature" /> - <span>{copilotTemperatureValue / 100}</span>
-                </label>
-                <input onChange={onchangeCopilotTemperature} id="copilot-temperature" value={copilotTemperatureValue} min='0' max='100' type="range" className="custom-range" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-  )
-
-  const ipfsSettings = () => (
-    <div className="border-top">
-      <div className="card-body pt-3 pb-2">
-        <h6 className="card-title">
-          <FormattedMessage id="settings.ipfs" />
-        </h6>
-        <div className="pt-2 mb-0">
-          <label className="m-0">
-            IPFS <FormattedMessage id="settings.host" />:
-          </label>
-          <div className="text-secondary mb-0 h6">
-            <input placeholder="e.g. ipfs.infura.io" id="settingsIpfsUrl" data-id="settingsIpfsUrl" className="form-control" onChange={handleSaveIpfsUrl} value={ipfsUrl} />
-          </div>
-        </div>
-        <div className="pt-2 mb-0 pb-0">
-          <label className="m-0">
-            IPFS <FormattedMessage id="settings.protocol" />:
-          </label>
-          <div className="text-secondary mb-0 h6">
-            <input
-              placeholder="e.g. https"
-              id="settingsIpfsProtocol"
-              data-id="settingsIpfsProtocol"
-              className="form-control"
-              onChange={handleSaveIpfsProtocol}
-              value={ipfsProtocol}
-            />
-          </div>
-        </div>
-        <div className="pt-2 mb-0 pb-0">
-          <label className="m-0">
-            IPFS <FormattedMessage id="settings.port" />:
-          </label>
-          <div className="text-secondary mb-0 h6">
-            <input placeholder="e.g. 5001" id="settingsIpfsPort" data-id="settingsIpfsPort" className="form-control" onChange={handleSaveIpfsPort} value={ipfsPort} />
-          </div>
-        </div>
-        <div className="pt-2 mb-0 pb-0">
-          <label className="m-0">
-            IPFS <FormattedMessage id="settings.projectID" /> [ INFURA ]:
-          </label>
-          <div className="text-secondary mb-0 h6">
-            <input id="settingsIpfsProjectId" data-id="settingsIpfsProjectId" className="form-control" onChange={handleSaveIpfsProjectId} value={ipfsProjectId} />
-          </div>
-        </div>
-        <div className="pt-2 mb-0 pb-0">
-          <label className="m-0">
-            IPFS <FormattedMessage id="settings.projectSecret" /> [ INFURA ]:
-          </label>
-          <div className="text-secondary mb-0 h6">
-            <input
-              id="settingsIpfsProjectSecret"
-              data-id="settingsIpfsProjectSecret"
-              className="form-control"
-              type="password"
-              onChange={handleSaveIpfsSecret}
-              value={ipfsProjectSecret}
-            />
-          </div>
-        </div>
-        <div className="d-flex justify-content-end pt-2">
-          <input
-            className="btn btn-sm btn-primary ml-2"
-            id="saveIpfssettings"
-            data-id="settingsTabSaveIpfsSettings"
-            onClick={() => saveIpfsSettings()}
-            value={intl.formatMessage({ id: 'settings.save' })}
-            type="button"
-          ></input>
-        </div>
-      </div>
-    </div>
-  )
+          filtSection.subSections = subSectionResults.map((result) => result.item)
+          setFilteredSection(filtSection)
+        }
+        return result.item
+      })
+      if (resultItems.length > 0) {
+        setFilteredSections(resultItems)
+        setSelected(resultItems[0].key)
+      } else {
+        setFilteredSections([])
+        setSelected(null)
+        setFilteredSection({} as SettingsSection)
+      }
+    } else {
+      setFilteredSections(visibleSections)
+      setFilteredSection(visibleSections[0])
+      setSelected(visibleSections[0]?.key)
+    }
+  }, [search, visibleSections])
 
   return (
-    <div>
-      {state.message ? <Toaster message={state.message} /> : null}
-      {generalConfig()}
-      {copilotSettings()}
-      <GithubSettings
-        saveToken={(githubToken: string, githubUserName: string, githubEmail: string) => {
-          saveTokenToast(props.config, dispatchToast, githubToken, 'gist-access-token')
-          saveTokenToast(props.config, dispatchToast, githubUserName, 'github-user-name')
-          saveTokenToast(props.config, dispatchToast, githubEmail, 'github-email')
-        }}
-        removeToken={() => {
-          removeTokenToast(props.config, dispatchToast, 'gist-access-token')
-          removeTokenToast(props.config, dispatchToast, 'github-user-name')
-          removeTokenToast(props.config, dispatchToast, 'github-email')
-        }}
-        config={props.config}
-      />
-      <EtherscanSettings
-        saveToken={(etherscanToken: string) => {
-          saveTokenToast(props.config, dispatchToast, etherscanToken, 'etherscan-access-token')
-        }}
-        removeToken={() => {
-          removeTokenToast(props.config, dispatchToast, 'etherscan-access-token')
-        }}
-        config={props.config}
-      />
-      <SindriSettings
-        saveToken={(sindriToken: string) => {
-          saveTokenToast(props.config, dispatchToast, sindriToken, 'sindri-access-token')
-        }}
-        removeToken={() => {
-          removeTokenToast(props.config, dispatchToast, 'sindri-access-token')
-        }}
-        config={props.config}
-      />
-      {swarmSettings()}
-      {ipfsSettings()}
-      <RemixUiThemeModule themeModule={props._deps.themeModule} />
-      <RemixUiLocaleModule localeModule={props._deps.localeModule} />
-    </div>
+    <ThemeContext.Provider value={state.themeQuality}>
+      {settingsState.toaster.value ? <Toaster message={settingsState.toaster.value as string} /> : null}
+      <div className="container-fluid bg-light h-100 d-flex flex-column">
+        <div className='pt-5'></div>
+        <div className='d-flex flex-row pb-4 gap-4'>
+          <div data-id="settings-sidebar-header" className="ps-3 remix-settings-sidebar" style={{ flex: '1 1 0', minWidth: '8em', maxWidth: '18em' }}>
+            <h3 className={`fw-semibold ${state.themeQuality.name === 'dark' ? 'text-white' : 'text-black'}`} style={{ fontSize: '1.5rem' }}><FormattedMessage id="settings.displayName" /></h3>
+          </div>
+          <div className='d-flex flex-grow-1 remix-settings-search' style={{ maxWidth: '53.5em', minHeight: '4em' }}>
+            <span className="input-group-text rounded-0 border-end-0 pe-0" style={{ backgroundColor: state.themeQuality.name === 'dark' ? 'var(--custom-onsurface-layer-4)' : 'var(--bs-body-bg)' }}><i className="fa fa-search"></i></span>
+            <input type="text" className="form-control shadow-none h-100 rounded-0 border-start-0 no-outline w-100" placeholder={intl.formatMessage({ id: 'settings.searchSettings' })} style={{ minWidth: '21.5em' }} value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+        </div>
+        {filteredSections.length === 0 ? <div className="text-info text-center cursor-pointer"><FormattedMessage id="settings.noMatchFound" /></div> :
+          <div className="d-flex align-items-stretch flex-fill gap-4" style={{ minHeight: 0, overflow: 'hidden' }}>
+            {/* Sidebar */}
+            <div
+              className="flex-column bg-transparent p-0 px-3 remix-settings-sidebar overflow-auto"
+              style={{ flex: '1 1 0', minWidth: '8em', maxWidth: '18em', height: '100%' }}
+              data-id="settings-sidebar-nav"
+            >
+              <ul className="list-unstyled" data-id="settings-sidebar-nav-ul">
+                {filteredSections.map((section, index) => (
+                  <li
+                    className={`nav-item ${index !== filteredSections.length - 1 ? 'border-bottom' : ''} px-0 py-3 ${selected === section.key ? state.themeQuality.name === 'dark' ? 'active text-white' : 'active text-black' : 'text-secondary'}`}
+                    key={index}
+                    style={{ cursor: 'pointer' }}
+                    data-id={`settings-sidebar-${section.key}-li`}
+                  >
+                    <a
+                      data-id={`settings-sidebar-${section.key}`}
+                      className="nav-link p-0 cursor-pointer"
+                      onClick={() => {
+                        setSelected(section.key)
+                        setFilteredSection(section)
+                      }}
+                    >
+                      <h5 className={`fw-semibold mb-2 ${selected === section.key ? state.themeQuality.name === 'dark' ? 'active text-white' : 'active text-black' : 'text-secondary'}`} style={{ fontSize: '1rem' }} data-id={`settings-sidebar-${section.key}-h5`}><FormattedMessage id={section.label} /></h5>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            {/* Main Content */}
+            <div
+              className="flex-column p-0"
+              style={{ flex: '3 1 0', minWidth: 0, height: '100%' }}
+            >
+              <div className="remix-settings-main h-100 overflow-auto" style={{ maxWidth: '53.5em' }}>
+                <SettingsSectionUI plugin={props.plugin} section={filteredSection} state={settingsState} dispatch={dispatch} />
+              </div>
+            </div>
+          </div>}
+      </div>
+    </ThemeContext.Provider>
   )
 }

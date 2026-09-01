@@ -20,7 +20,7 @@ export class LogsManager {
   checkBlock (blockNumber, block, web3) {
     eachOf(block.transactions, (tx: any, i, next) => {
       const txHash = bytesToHex(tx.hash())
-      web3.eth.getTransactionReceipt(txHash, (_error, receipt) => {
+      web3.getTransactionReceipt(txHash, (_error, receipt) => {
         if (!receipt) return next()
         for (const log of receipt.logs) {
           this.oldLogs.push({ type: 'block', blockNumber, block, tx, log, txNumber: i, receipt })
@@ -52,7 +52,21 @@ export class LogsManager {
   }
 
   eventMatchesFilter (changeEvent, queryType, queryFilter) {
-    if (queryFilter.topics.filter((logTopic) => changeEvent.log.topics.indexOf(logTopic) >= 0).length === 0) return false
+    // topics should match
+    let noMatch = false
+    for (let i = 0; i < queryFilter.topics.length; i++) {
+      if (!queryFilter.topics[i]) {
+        continue // if the topic isn't defined, we consider it a match.
+      }
+      if (Array.isArray(queryFilter.topics[i])) {
+        if (queryFilter.topics[i].indexOf(changeEvent.log.topics[i]) === -1) {
+          noMatch = true
+        }
+        continue
+      }
+      if (queryFilter.topics[i] !== changeEvent.log.topics[i]) noMatch = true
+    }
+    if (noMatch) return false
 
     if (queryType === 'logs') {
       const fromBlock = parseInt(queryFilter.fromBlock || '0x0')

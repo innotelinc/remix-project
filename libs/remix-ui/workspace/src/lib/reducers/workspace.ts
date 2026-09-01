@@ -1,3 +1,4 @@
+import path from 'path'
 import { extractNameFromKey, extractParentFromKey } from '@remix-ui/helper'
 import { action, Actions, FileType, WorkspaceElement } from '../types'
 import * as _ from 'lodash'
@@ -6,9 +7,21 @@ import { ROOT_PATH } from '../utils/constants'
 import isElectron from 'is-electron'
 import { fileKeySort } from '../utils'
 import { branch } from '@remix-ui/git'
+import { current } from '@reduxjs/toolkit'
+
+let _debug = false
+
+/**
+ * Enable or disable debug logging for the browser reducer.
+ * Disabled by default.
+ */
+export function setBrowserReducerDebug(enabled: boolean): void {
+  _debug = enabled
+}
 export interface BrowserState {
   browser: {
     currentWorkspace: string
+    workspaceSwitchVersion: number
     workspaces: {
       name: string
       isGitRepo: boolean
@@ -16,6 +29,7 @@ export interface BrowserState {
       branches?: branch[]
       currentBranch?: branch
       isGist: string
+      remoteId?: string
     }[]
     files: {[x: string]: Record<string, FileType>}
     flatTree: FileType[]
@@ -73,6 +87,7 @@ export interface BrowserState {
 export const browserInitialState: BrowserState = {
   browser: {
     currentWorkspace: '',
+    workspaceSwitchVersion: 0,
     workspaces: [],
     files: {},
     flatTree: [],
@@ -128,6 +143,8 @@ export const browserInitialState: BrowserState = {
 }
 
 export const browserReducer = (state = browserInitialState, action: Actions) => {
+  if (_debug) console.debug('[BrowserReducer] Action:', action.type, 'Payload:', action.payload)
+  if (_debug) console.debug('[BrowserReducer] Current State:', state)
   switch (action.type) {
   case 'SET_CURRENT_WORKSPACE': {
     const payload = action.payload
@@ -142,6 +159,7 @@ export const browserReducer = (state = browserInitialState, action: Actions) => 
       browser: {
         ...state.browser,
         currentWorkspace: payload.name,
+        workspaceSwitchVersion: (state.browser.workspaceSwitchVersion || 0) + 1,
         workspaces: workspaces.filter((workspace) => workspace)
       }
     }
@@ -332,10 +350,11 @@ export const browserReducer = (state = browserInitialState, action: Actions) => 
 
   case 'FILE_ADDED_SUCCESS': {
     const payload = action.payload
+
+    const check = checkCurrentParentPathInView(payload, state.mode === 'browser' ? state.browser.expandPath : state.localhost.expandPath)
     const fd = fileAdded(state, payload)
-    const dir = extractParentFromKey(payload)
-    const browserExpandPath = state.mode === 'browser' && !isElectron() ? [...new Set([...state.browser.expandPath, payload])] : state.browser.expandPath
-    const localhostExpandPath = state.mode === 'localhost' ? [...new Set([...state.localhost.expandPath, payload])] : state.localhost.expandPath
+    const browserExpandPath = state.mode === 'browser' && !isElectron() && check.inView && !payload.includes('.deps') ? [...new Set([...state.browser.expandPath, payload])] : state.browser.expandPath
+    const localhostExpandPath = state.mode === 'localhost' && check.inView && !payload.includes('.deps') ? [...new Set([...state.localhost.expandPath, payload])] : state.localhost.expandPath
     const flatTree = flattenTree(fd, state.mode === 'browser'? browserExpandPath : localhostExpandPath)
     return {
       ...state,
@@ -365,8 +384,13 @@ export const browserReducer = (state = browserInitialState, action: Actions) => 
   case 'FOLDER_ADDED_SUCCESS': {
     const payload = action.payload
     const fd = fetchDirectoryContent(state, payload)
-    const browserExpandPath = state.mode === 'browser' && !isElectron() ? [...new Set([...state.browser.expandPath, payload.folderPath])] : state.browser.expandPath
-    const localhostExpandPath = state.mode === 'localhost' ? [...new Set([...state.localhost.expandPath, payload.folderPath])] : state.localhost.expandPath
+
+    const check = checkCurrentParentPathInView(payload.folderPath, state.mode === 'browser' ? state.browser.expandPath : state.localhost.expandPath)
+    const inView = check.inView || check.rootViewToAdd
+    payload.folderPath = check.inView ? payload.folderPath : check.rootViewToAdd ? check.rootFolder : ''
+
+    const browserExpandPath = state.mode === 'browser' && !isElectron() && inView && !payload.folderPath.includes('.deps') ? [...new Set([...state.browser.expandPath, payload.folderPath])] : state.browser.expandPath
+    const localhostExpandPath = state.mode === 'localhost' && inView && !payload.folderPath.includes('.deps') ? [...new Set([...state.localhost.expandPath, payload.folderPath])] : state.localhost.expandPath
     const flatTree = flattenTree(fd, state.mode === 'browser'? browserExpandPath : localhostExpandPath)
     return {
       ...state,
@@ -918,6 +942,7 @@ const fileAdded = (
 ): {[x: string]: Record<string, FileType>} => {
   let files =
     state.mode === 'browser' ? state.browser.files : state.localhost.files
+  if (!path) return files
   const _path = splitPath(state, path)
   const childPath = _path.slice(0, _path.length - 1)
 
@@ -1082,6 +1107,45 @@ const fetchDirectoryContent = (
         }
       }
       return files
+    }
+  }
+}
+
+const checkCurrentParentPathInView = (currentPath: string, expandPath: string[]) => {
+  try {
+    let rootViewToAdd = false
+    let inView = false
+    let rootFolder
+    const parent = path.dirname(currentPath)
+    if (parent === '.') {
+      // this folder is at the root.
+      rootFolder = currentPath
+      if (!expandPath.includes(currentPath)) { // But at least show the root if it's not already there.
+        rootFolder = currentPath
+        rootViewToAdd = true
+      }
+    } else {
+      const root = currentPath.split('/')[0]
+      if (!expandPath.includes(parent)) { // current path is not yet displayed
+        inView = false
+        if (!expandPath.includes(root)) { // But at least show the root if it's not already there.
+          rootFolder = root
+          rootViewToAdd = true
+        }
+      } else
+        inView = true
+    }
+    return {
+      rootFolder,
+      rootViewToAdd,
+      inView
+    }
+  } catch (e) {
+    if (_debug) console.log(e)
+    return {
+      rootFolder:undefined,
+      rootViewToAdd: false,
+      inView: true
     }
   }
 }

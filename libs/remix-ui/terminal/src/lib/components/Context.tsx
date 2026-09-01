@@ -10,34 +10,41 @@ const Context = ({ opts, provider }: {opts; provider: string}) => {
   if (data.to) to = to + ' ' + shortenHexData(data.to)
   const val = data.value
   let hash = data.hash ? shortenHexData(data.hash) : ''
-  const input = data.input ? shortenHexData(data.input) : ''
-  const logs = opts.logs && opts.logs.decoded && opts.logs.decoded.length ? opts.logs.decoded.length : 0
+  const input = data.input ? shortenHexData(data.input) : (data.data ? shortenHexData(data.data) : '')
+  const logs = opts.logs && opts.logs.raw && opts.logs.raw.length ? opts.logs.raw.length : 0
   const block = data.receipt ? data.receipt.blockNumber : data.blockNumber || ''
-  const i = data.receipt ? data.transactionIndex : data.transactionIndex
+  let txIndex
+  if (data.index == 0) txIndex = 0
+  else txIndex = data.index ? data.index.toString() : '-'
   const value = val ? typeConversion.toInt(val) : 0
-
   if (provider && provider.startsWith('vm')) {
     return (
       <div>
-        <span>
+        <span className="d-flex flex-wrap align-items-center">
           <span className="remix_ui_terminal_tx">[vm]</span>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">from:</span> {from}
+            <span className="remix_ui_terminal_txItemTitle">from:</span>
+            <span className="remix_ui_terminal_txItemValue remix_ui_terminal_txItemValue--hex">{from}</span>
           </div>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">to:</span> {to}
+            <span className="remix_ui_terminal_txItemTitle">to:</span>
+            <span className="remix_ui_terminal_txItemValue remix_ui_terminal_txItemValue--hex">{to}</span>
           </div>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">value:</span> {value} wei
+            <span className="remix_ui_terminal_txItemTitle">value:</span>
+            <span className="remix_ui_terminal_txItemValue">{value} wei</span>
           </div>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">data:</span> {input}
+            <span className="remix_ui_terminal_txItemTitle">data:</span>
+            <span className="remix_ui_terminal_txItemValue remix_ui_terminal_txItemValue--hex">{input}</span>
           </div>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">logs:</span> {logs}
+            <span className="remix_ui_terminal_txItemTitle">logs:</span>
+            <span className="remix_ui_terminal_txItemValue">{logs}</span>
           </div>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">hash:</span> {hash}
+            <span className="remix_ui_terminal_txItemTitle">hash:</span>
+            <span className="remix_ui_terminal_txItemValue remix_ui_terminal_txItemValue--hex">{hash}</span>
           </div>
         </span>
       </div>
@@ -45,27 +52,33 @@ const Context = ({ opts, provider }: {opts; provider: string}) => {
   } else if (data.resolvedData) {
     return (
       <div>
-        <span>
+        <span className="d-flex flex-wrap align-items-center">
           <span className="remix_ui_terminal_tx">
-            [block:{block.toString()} txIndex:{i ? i.toString() : '-'}]
+            [block:{block.toString()} txIndex:{txIndex}]
           </span>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">from:</span> {from}
+            <span className="remix_ui_terminal_txItemTitle">from:</span>
+            <span className="remix_ui_terminal_txItemValue remix_ui_terminal_txItemValue--hex">{from}</span>
           </div>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">to:</span> {to}
+            <span className="remix_ui_terminal_txItemTitle">to:</span>
+            <span className="remix_ui_terminal_txItemValue remix_ui_terminal_txItemValue--hex">{to}</span>
           </div>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">value:</span> {value} wei
+            <span className="remix_ui_terminal_txItemTitle">value:</span>
+            <span className="remix_ui_terminal_txItemValue">{value} wei</span>
           </div>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">data:</span> {input}
+            <span className="remix_ui_terminal_txItemTitle">data:</span>
+            <span className="remix_ui_terminal_txItemValue remix_ui_terminal_txItemValue--hex">{input}</span>
           </div>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">logs:</span> {logs}
+            <span className="remix_ui_terminal_txItemTitle">logs:</span>
+            <span className="remix_ui_terminal_txItemValue">{logs}</span>
           </div>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">hash:</span> {hash}
+            <span className="remix_ui_terminal_txItemTitle">hash:</span>
+            <span className="remix_ui_terminal_txItemValue remix_ui_terminal_txItemValue--hex">{hash}</span>
           </div>
         </span>
       </div>
@@ -74,27 +87,33 @@ const Context = ({ opts, provider }: {opts; provider: string}) => {
     hash = shortenHexData(data.blockHash)
     return (
       <div>
-        <span>
+        <span className="d-flex flex-wrap align-items-center">
           <span className="remix_ui_terminal_tx">
-            [block:{block.toString()} txIndex:{i ? i.toString() : '-'}]
+            [block:{block.toString()} txIndex:{txIndex}]
           </span>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">from:</span> {from}
+            <span className="remix_ui_terminal_txItemTitle">from:</span>
+            <span className="remix_ui_terminal_txItemValue remix_ui_terminal_txItemValue--hex">{from}</span>
           </div>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">to:</span> {to}
+            <span className="remix_ui_terminal_txItemTitle">to:</span>
+            <span className="remix_ui_terminal_txItemValue remix_ui_terminal_txItemValue--hex">{to}</span>
           </div>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">value:</span> {value} wei
+            <span className="remix_ui_terminal_txItemTitle">value:</span>
+            <span className="remix_ui_terminal_txItemValue">{value} wei</span>
           </div>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">data:</span> {input}
+            <span className="remix_ui_terminal_txItemTitle">data:</span>
+            <span className="remix_ui_terminal_txItemValue remix_ui_terminal_txItemValue--hex">{input}</span>
           </div>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">logs:</span> {logs}
+            <span className="remix_ui_terminal_txItemTitle">logs:</span>
+            <span className="remix_ui_terminal_txItemValue">{logs}</span>
           </div>
           <div className="remix_ui_terminal_txItem">
-            <span className="remix_ui_terminal_txItemTitle">hash:</span> {hash}
+            <span className="remix_ui_terminal_txItemTitle">hash:</span>
+            <span className="remix_ui_terminal_txItemValue remix_ui_terminal_txItemValue--hex">{hash}</span>
           </div>
         </span>
       </div>

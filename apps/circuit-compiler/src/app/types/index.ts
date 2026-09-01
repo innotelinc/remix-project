@@ -1,8 +1,11 @@
 import { compiler_list } from 'circom_wasm'
 import { Dispatch } from 'react'
 import type { CircomPluginClient } from '../services/circomPluginClient'
+import { CompilerReport } from '@remix-ui/helper'
 
 export type CompilerStatus = "compiling" | "computing" | "idle" | "errored" | "warning" | "exporting" | "proving"
+
+export type ZkVerifyStatus = 'idle' | 'verifying' | 'verified' | 'failed'
 
 export type ProvingScheme = 'groth16' | 'plonk'
 
@@ -23,6 +26,8 @@ export interface ICircuitAppContext {
 
 export interface ActionPayloadTypes {
   SET_COMPILER_VERSION: string,
+  SET_VERSION_DOWNLOAD_LIST: string[],
+  REMOVE_VERSION_FROM_DOWNLOAD_LIST: string,
   SET_FILE_PATH: string,
   SET_COMPILER_STATUS: CompilerStatus,
   SET_PRIME_VALUE: PrimeValue,
@@ -42,7 +47,9 @@ export interface ActionPayloadTypes {
   SET_EXPORT_WTNS_JSON: boolean,
   SET_SETUP_EXPORT_STATUS: SetupExportStatus,
   SET_VERIFICATION_KEY: Record<string, any>,
-  SET_ZKEY: any
+  SET_ZKEY: any,
+  SET_ZKVERIFY_STATUS: ZkVerifyStatus,
+  SET_ZKVERIFY_ATTESTATION: string | null
 }
 export interface Action<T extends keyof ActionPayloadTypes> {
   type: T
@@ -54,6 +61,7 @@ export type Actions = {[A in keyof ActionPayloadTypes]: Action<A>}[keyof ActionP
 export interface AppState {
   version: string,
   versionList: typeof compiler_list.wasm_builds,
+  versionDownloadList: string[],
   filePath: string,
   filePathToId: Record<string, string>,
   status: CompilerStatus,
@@ -74,7 +82,9 @@ export interface AppState {
   exportVerifierCalldata: boolean,
   exportWtnsJson: boolean,
   verificationKey: Record<string, any>,
-  zKey: Uint8Array
+  zKey: Uint8Array,
+  zkVerifyStatus: ZkVerifyStatus,
+  zkVerifyAttestation: string | null
 }
 
 export type CompilationConfig = {
@@ -83,34 +93,6 @@ export type CompilationConfig = {
 }
 
 export type PrimeValue = "bn128" | "bls12381" | "goldilocks" | "grumpkin" | "pallas" | "vesta"
-
-export type CompilerFeedbackProps = {
-  feedback: string | CompilerReport[],
-  filePathToId: Record<string, string>,
-  openErrorLocation: (location: string, startRange: string) => void,
-  hideWarnings: boolean,
-  askGPT: (report: CompilerReport) => void
-}
-
-export type CompilerReport = {
-  type: "Error" | "Bug" | "Help" | "Note" | "Warning" | "Unknown",
-  message: string,
-  labels: {
-    style: "Primary" | "Secondary" | "Unknown",
-    file_id: string,
-    range: {
-      start: string,
-      end: string
-    },
-    message: string
-  }[],
-  notes: string[]
-}
-
-export type FeedbackAlertProps = {
-  message: string,
-  askGPT: () => void
-}
 
 export type ConfigurationsProps = {
   setPrimeValue: (prime: PrimeValue) => void,

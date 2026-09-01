@@ -1,22 +1,24 @@
-import React, {useState, useEffect} from 'react' // eslint-disable-line
+import React, {useState, useEffect, useContext} from 'react' // eslint-disable-line
 import { FormattedMessage, useIntl } from 'react-intl'
-import { ContractPropertyName, ContractSelectionProps, ScanReport } from './types'
+import { handleSolidityScan } from '@remix-project/core-plugin'
+import { ContractPropertyName, ContractSelectionProps } from './types'
 import {PublishToStorage} from '@remix-ui/publish-to-storage' // eslint-disable-line
 import {TreeView, TreeViewItem} from '@remix-ui/tree-view' // eslint-disable-line
 import {CopyToClipboard} from '@remix-ui/clipboard' // eslint-disable-line
 import { saveAs } from 'file-saver'
 import { AppModal } from '@remix-ui/app'
-import { SolScanTable } from './solScanTable'
-import axios from 'axios'
+import { TrackingContext } from '@remix-ide/tracking'
+import { CompilerEvent, SolidityCompilerEvent } from '@remix-api'
 
 import './css/style.css'
-import { CustomTooltip } from '@remix-ui/helper'
-const _paq = (window._paq = window._paq || [])
+import { CustomTooltip, SolScanTable } from '@remix-ui/helper'
 
 export const ContractSelection = (props: ContractSelectionProps) => {
   const { api, compiledFileName, contractsDetails, contractList, compilerInput, modal } = props
   const [selectedContract, setSelectedContract] = useState('')
   const [storage, setStorage] = useState(null)
+  const { trackMatomoEvent: baseTrackEvent } = useContext(TrackingContext)
+  const trackMatomoEvent = <T extends CompilerEvent | SolidityCompilerEvent = CompilerEvent | SolidityCompilerEvent>(event: T) => baseTrackEvent?.<T>(event)
 
   const intl = useIntl()
 
@@ -62,9 +64,8 @@ export const ContractSelection = (props: ContractSelectionProps) => {
   }
 
   const getContractProperty = (property) => {
-    if (!selectedContract) throw new Error('No contract compiled yet')
+    if (!selectedContract) return
     const contractProperties = contractsDetails[selectedContract]
-
     if (contractProperties && contractProperties[property]) return contractProperties[property]
     return null
   }
@@ -80,7 +81,7 @@ export const ContractSelection = (props: ContractSelectionProps) => {
           key={keyPath}
           label={
             <div className="d-flex mt-2 flex-row remixui_label_item">
-              <label className="font-weight-bold pr-1 remixui_label_key">{key}:</label>
+              <label className="fw-bold pe-1 remixui_label_key">{key}:</label>
               <label className="m-0 remixui_label_value">{typeof data.self === 'boolean' ? `${data.self}` : data.self}</label>
             </div>
           }
@@ -97,7 +98,7 @@ export const ContractSelection = (props: ContractSelectionProps) => {
           key={keyPath}
           label={
             <div className="d-flex mt-2 flex-row remixui_label_item">
-              <label className="font-weight-bold pr-1 remixui_label_key">{key}:</label>
+              <label className="fw-bold pe-1 remixui_label_key">{key}:</label>
               <label className="m-0 remixui_label_value">{typeof data.self === 'boolean' ? `${data.self}` : data.self}</label>
             </div>
           }
@@ -168,7 +169,7 @@ export const ContractSelection = (props: ContractSelectionProps) => {
   }
 
   const details = () => {
-    _paq.push(['trackEvent', 'compiler', 'compilerDetails', 'display'])
+    trackMatomoEvent({ category: 'compiler', action: 'compilerDetails', name: 'display', isClick: false })
     if (!selectedContract) throw new Error('No contract compiled yet')
 
     const help = {
@@ -237,7 +238,7 @@ export const ContractSelection = (props: ContractSelectionProps) => {
       </div>
     )
     const downloadFn = () => {
-      _paq.push(['trackEvent', 'compiler', 'compilerDetails', 'download'])
+      trackMatomoEvent({ category: 'compiler', action: 'compilerDetails', name: 'download', isClick: true })
       saveAs(new Blob([JSON.stringify(contractProperties, null, '\t')]), `${selectedContract}_compData.json`)
     }
     // modal(selectedContract, log, intl.formatMessage({id: 'solidity.download'}), downloadFn, true, intl.formatMessage({id: 'solidity.close'}), null)
@@ -249,7 +250,7 @@ export const ContractSelection = (props: ContractSelectionProps) => {
   }
 
   const runStaticAnalysis = async () => {
-    _paq.push(['trackEvent', 'solidityCompiler', 'runStaticAnalysis', 'initiate'])
+    trackMatomoEvent({ category: 'solidityCompiler', action: 'runStaticAnalysis', name: 'initiate', isClick: false })
     const plugin = api as any
     const isStaticAnalyzersActive = await plugin.call('manager', 'isActive', 'solidityStaticAnalysis')
     if (!isStaticAnalyzersActive) {
@@ -259,91 +260,16 @@ export const ContractSelection = (props: ContractSelectionProps) => {
   }
 
   const handleScanContinue = async () => {
-    const plugin = api as any
-    await plugin.call('notification', 'toast', 'Processing data to scan...')
-    _paq.push(['trackEvent', 'solidityCompiler', 'solidityScan', 'initiateScan'])
-    const workspace = await plugin.call('filePanel', 'getCurrentWorkspace')
-    const fileName = `${workspace.name}/${props.compiledFileName}`
-    const filePath = `.workspaces/${fileName}`
-    const file = await plugin.call('fileManager', 'readFile', filePath)
-
-    const urlResponse = await axios.post(`https://solidityscan.remixproject.org/uploadFile`, { file, fileName })
-
-    if (urlResponse.data.status === 'success') {
-      const ws = new WebSocket('wss://solidityscan.remixproject.org/solidityscan')
-
-      ws.addEventListener('error', console.error);
-
-      ws.addEventListener('open', async (event) => {
-        await plugin.call('notification', 'toast', 'Loading scan result in Remix terminal...')
-      })
-
-      ws.addEventListener('message', async (event) => {
-        const data = JSON.parse(event.data)
-        if (data.type === "auth_token_register" && data.payload.message === "Auth token registered.") {
-          // Message on Bearer token successful registration
-          const reqToInitScan = {
-            "action": "message",
-            "payload": {
-              "type": "private_project_scan_initiate",
-              "body": {
-                "file_urls": [
-                  urlResponse.data.result.url
-                ],
-                "project_name": "RemixProject",
-                "project_type": "new"
-              }
-            }
-          }
-          ws.send(JSON.stringify(reqToInitScan))
-        } else if (data.type === "scan_status" && data.payload.scan_status === "download_failed") {
-          // Message on failed scan
-          _paq.push(['trackEvent', 'solidityCompiler', 'solidityScan', 'scanFailed'])
-          const modal: AppModal = {
-            id: 'SolidityScanError',
-            title: <FormattedMessage id="solidity.solScan.errModalTitle" />,
-            message: data.payload.scan_status_err_message,
-            okLabel: 'Close'
-          }
-          await plugin.call('notification', 'modal', modal)
-        } else if (data.type === "scan_status" && data.payload.scan_status === "scan_done") {
-          // Message on successful scan
-          _paq.push(['trackEvent', 'solidityCompiler', 'solidityScan', 'scanSuccess'])
-          const url = data.payload.scan_details.link
-
-          const { data: scanData } = await axios.post('https://solidityscan.remixproject.org/downloadResult', { url })
-          const scanReport: ScanReport = scanData.scan_report
-          if (scanReport?.multi_file_scan_details?.length) {
-            for (const template of scanReport.multi_file_scan_details) {
-              if (template.metric_wise_aggregated_findings?.length) {
-                const { metric_wise_aggregated_findings } = template
-                const positions = []
-                for (const details of metric_wise_aggregated_findings) {
-                  const { findings } = details
-                  for (const f of findings)
-                    positions.push(`${f.line_nos_start[0]}:${f.line_nos_end[0]}`)
-                }
-                template.positions = JSON.stringify(positions)
-              }
-            }
-            await plugin.call('terminal', 'logHtml', <SolScanTable scanReport={scanReport} fileName={fileName}/>)
-          } else {
-            const modal: AppModal = {
-              id: 'SolidityScanError',
-              title: <FormattedMessage id="solidity.solScan.errModalTitle" />,
-              message: "Some error occurred! Please try again",
-              okLabel: 'Close'
-            }
-            await plugin.call('notification', 'modal', modal)
-          }
-
-        }
-      })
-    }
+    await handleSolidityScan(
+      api,
+      props.compiledFileName,
+      intl.formatMessage({ id: 'solidity.solScan.errModalTitle' }),
+      (scanReport, fileName) => <SolScanTable scanReport={scanReport} fileName={fileName} />
+    )
   }
 
   const runSolidityScan = async () => {
-    _paq.push(['trackEvent', 'solidityCompiler', 'solidityScan', 'askPermissionToScan'])
+    trackMatomoEvent({ category: 'solidityCompiler', action: 'solidityScan', name: 'askPermissionToScan', isClick: false })
     const modal: AppModal = {
       id: 'SolidityScanPermissionHandler',
       title: <FormattedMessage id="solidity.solScan.modalTitle" />,
@@ -351,8 +277,8 @@ export const ContractSelection = (props: ContractSelectionProps) => {
         <span><FormattedMessage id="solidity.solScan.modalMessage" />
           <a href={'https://solidityscan.com/?utm_campaign=remix&utm_source=remix'}
             target="_blank"
-            onClick={() => _paq.push(['trackEvent', 'solidityCompiler', 'solidityScan', 'learnMore'])}>
-              Learn more
+            onClick={() => trackMatomoEvent({ category: 'solidityCompiler', action: 'solidityScan', name: 'learnMore', isClick: true })}>
+            <FormattedMessage id="solidity.learnMore" />
           </a>
         </span>
         <br/>
@@ -360,9 +286,9 @@ export const ContractSelection = (props: ContractSelectionProps) => {
       </div>,
       okLabel: <FormattedMessage id="solidity.solScan.modalOkLabel" />,
       okFn: handleScanContinue,
-      cancelLabel: <FormattedMessage id="solidity.solScan.modalCancelLabel" />
+      cancelLabel: <FormattedMessage id="solidity.solScan.modalCancelLabel" />,
+      cancelFn:() => { trackMatomoEvent({ category: 'solidityCompiler', action: 'solidityScan', name: 'cancelClicked', isClick: true })}
     }
-
     await (api as any).call('notification', 'modal', modal)
   }
 
@@ -370,13 +296,13 @@ export const ContractSelection = (props: ContractSelectionProps) => {
     // define swarm logo
     <>
       {contractList.length ? (
-        <section className="remixui_compilerSection pt-3">
+        <section className="px-4 pt-3">
           {/* Select Compiler Version */}
           <div className="mb-3">
             <label className="remixui_compilerLabel form-check-label" htmlFor="compiledContracts">
               <FormattedMessage id="solidity.contract" />
             </label>
-            <select onChange={(e) => handleContractChange(e.target.value)} value={selectedContract} data-id="compiledContracts" id="compiledContracts" className="custom-select">
+            <select onChange={(e) => handleContractChange(e.target.value)} value={selectedContract} data-id="compiledContracts" id="compiledContracts" className="form-select">
               {contractList.map(({ name, file }, index) => (
                 <option value={name} key={index}>
                   {name} ({file})
@@ -384,7 +310,7 @@ export const ContractSelection = (props: ContractSelectionProps) => {
               ))}
             </select>
           </div>
-          <article className="mt-2 pb-0">
+          <article className="mt-2 pb-0 d-grid gap-2">
             <CustomTooltip
               placement={'auto-end'}
               tooltipId="runStaticAnalysisTooltip"
@@ -395,13 +321,13 @@ export const ContractSelection = (props: ContractSelectionProps) => {
             >
               <button
                 id="runStaticAnalysis"
-                className="btn border btn-block"
+                className="btn border"
                 onClick={() => {
                   runStaticAnalysis()
                 }}
               >
                 <span>
-                  <img id="ssaLogo" className="remixui_storageLogo mr-2" src="assets/img/staticAnalysisColorBlue.webp" />
+                  <img id="ssaLogo" className="remixui_storageLogo me-2" src="assets/img/staticAnalysisColorBlue.webp" />
                   <span>
                     <FormattedMessage id="solidity.runStaticAnalysis" />
                   </span>
@@ -418,13 +344,13 @@ export const ContractSelection = (props: ContractSelectionProps) => {
             >
               <button
                 id="runSolidityScan"
-                className="btn border btn-block"
+                className="btn border"
                 onClick={() => {
                   runSolidityScan()
                 }}
               >
                 <span>
-                  <img id="solscanLogo" className="remixui_storageLogo mr-2" src="assets/img/solidityScanLogo.webp" />
+                  <img id="solscanLogo" className="remixui_storageLogo me-2" src="assets/img/solidityScanLogo.webp" />
                   <span>
                     <FormattedMessage id="solidity.runSolidityScan" />
                   </span>
@@ -441,14 +367,14 @@ export const ContractSelection = (props: ContractSelectionProps) => {
             >
               <button
                 id="publishOnIpfs"
-                className="btn border btn-block"
+                className="btn border"
                 onClick={() => {
                   handlePublishToStorage('ipfs')
                 }}
               >
 
                 <span>
-                  <img id="ipfsLogo" className="remixui_storageLogo mr-2" src="assets/img/ipfs.webp" />
+                  <img id="ipfsLogo" className="remixui_storageLogo me-2" src="assets/img/ipfs.webp" />
                   <span>
                     <FormattedMessage id="solidity.publishOn" /> IPFS
                   </span>
@@ -465,13 +391,13 @@ export const ContractSelection = (props: ContractSelectionProps) => {
             >
               <button
                 id="publishOnSwarm"
-                className="btn border btn-block"
+                className="btn border"
                 onClick={() => {
                   handlePublishToStorage('swarm')
                 }}
               >
                 <span>
-                  <img id="swarmLogo" className="remixui_storageLogo mr-2" src="assets/img/swarmColor.webp" />
+                  <img id="swarmLogo" className="remixui_storageLogo me-2" src="assets/img/swarmColor.webp" />
                   <span>
                     <FormattedMessage id="solidity.publishOn" /> Swarm
                   </span>
@@ -486,14 +412,14 @@ export const ContractSelection = (props: ContractSelectionProps) => {
             >
               <button
                 data-id="compilation-details"
-                className="btn border btn-block"
+                className="btn border"
                 onClick={async () => {
                   details()
                   await (api as any).call('compilationDetails', 'showDetails', payload)
                 }}
               >
                 <span>
-                  <i className="fa-regular fa-memo-pad mr-2 text-primary"></i>
+                  <i className="fa-regular fa-memo-pad me-2 text-primary"></i>
                   <span>
                     <FormattedMessage id="solidity.compilationDetails" />
                   </span>
@@ -502,8 +428,8 @@ export const ContractSelection = (props: ContractSelectionProps) => {
             </CustomTooltip>
             {/* Copy to Clipboard */}
             <div className="remixui_contractHelperButtons">
-              <div className="input-group">
-                <div className="btn-group" role="group" aria-label="Copy to Clipboard">
+              <div className="input-group d-block">
+                <div className="btn-group float-end" role="group" aria-label={intl.formatMessage({ id: 'solidity.copyToClipboard' })}>
                   <CopyToClipboard tip={intl.formatMessage({ id: 'solidity.copyABI' })} getContent={copyABI} direction="top">
                     <button className="btn remixui_copyButton">
                       <i className="remixui_copyIcon far fa-copy" aria-hidden="true"></i>
@@ -522,7 +448,7 @@ export const ContractSelection = (props: ContractSelectionProps) => {
           </article>
         </section>
       ) : (
-        <section className="remixui_container clearfix">
+        <section className="m-0 clearfix">
           <article className="px-2 mt-2 pb-0 d-flex w-100">
             <span className="mt-2 mx-3 w-100 alert alert-warning" role="alert">
               <FormattedMessage id="solidity.noContractCompiled" />

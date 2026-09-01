@@ -545,7 +545,7 @@ declare interface ISettings {
 }
 
 declare interface ITerminal {
-    events: {   
+    events: {
     } & StatusEvents
     methods: {
         log(message: TerminalMessage): void
@@ -604,10 +604,11 @@ declare type MethodParams<T extends Api, K extends MethodKey<T>> = T extends Api
 declare type Network =
 | { id: '1', name: 'Main' }
 | { id: '2', name: 'Morden (deprecated)' }
-| { id: '3', name: 'Ropsten' }
-| { id: '4', name: 'Rinkeby' }
-| { id: '5', name: 'Goerli' }
-| { id: '42', name: 'Kovan' }
+| { id: '3', name: 'Ropsten (deprecated)' }
+| { id: '4', name: 'Rinkeby (deprecated)' }
+| { id: '5', name: 'Goerli (deprecated)' }
+| { id: '42', name: 'Kovan (deprecated)' }
+| { id: '11155111', name: 'Sepolia' }
 
 /** @deprecated: current version in Remix IDE. To improve to match standard JSON RPC methods */
 declare type NetworkProvider = 'vm' | 'injected' | 'web3'
@@ -675,7 +676,7 @@ export declare class PluginClient<T extends Api = any, App extends ApiMap = Remi
      * @param from profile of plugin asking to deactivate
      * @note PluginManager will always be able to deactivate
      */
-    canDeactivate(from: Profile): boolean;
+    checkCanDeactivate(from: Profile): boolean;
     /** Make a call to another plugin */
     call<Name extends Extract<keyof App, string>, Key extends MethodKey<App[Name]>>(name: Name, key: Key, ...payload: MethodParams<App[Name], Key>): Promise<ReturnType<App[Name]['methods'][Key]>>;
     /** Listen on event from another plugin */

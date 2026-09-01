@@ -5,7 +5,7 @@ import { fileDecoration } from '@remix-ui/file-decorators'
 import { RemixAppManager } from 'libs/remix-ui/plugin-manager/src/types'
 import { ViewPlugin } from '@remixproject/engine-web'
 import { appPlatformTypes } from '@remix-ui/app'
-import { Placement } from 'react-bootstrap/esm/Overlay'
+import { Placement } from 'react-bootstrap/esm/types'
 import { branch } from '@remix-api'
 
 export type action = { name: string, type?: Array<WorkspaceElement>, path?: string[], extension?: string[], pattern?: string[], id: string, multiselect: boolean, label: string, sticky?: boolean, group: number, platform?: appPlatformTypes }
@@ -20,7 +20,7 @@ export interface JSONStandardInput {
   }
 }
 export type MenuItems = action[]
-export type WorkspaceTemplate = 'gist-template' | 'code-template' | 'remixDefault' | 'blank' | 'ozerc20' | 'zeroxErc20' | 'ozerc721' | 'playground' | 'semaphore' | 'hashchecker' | 'rln' | 'breakthroughLabsUniswapv4Hooks' | 'uniswapV4Template' | 'uniswapV4HookBookMultiSigSwapHook'
+export type WorkspaceTemplate = 'gist-template' | 'code-template' | 'remixDefault' | 'blank' | 'ozerc20' | 'zeroxErc20' | 'ozerc721' | 'ozerc1155' | 'playground' | 'semaphore' | 'hashchecker' | 'rln' | 'breakthroughLabsUniswapv4Hooks' | 'uniswapV4Template' | 'uniswapV4HookBookMultiSigSwapHook' | 'multNr' | 'stealthDropNr'
 export interface WorkspaceProps {
   plugin: FilePanelType
 }
@@ -50,11 +50,14 @@ export interface FileType {
 
 export type WorkspaceMetadata = {
   name: string
-  isGitRepo: boolean
+  isGitRepo?: boolean
   hasGitSubmodules?: boolean
   branches?: branch[]
   currentBranch?: branch
-  isGist: string
+  isGist?: string
+  isLocalhost?: boolean
+  absolutePath?: string
+  remoteId?: string
 }
 
 export type TemplateType = {
@@ -64,13 +67,16 @@ export type TemplateType = {
   name?: string
   endpoint?: string
   params?: any[]
+  desktopCompatible?: boolean
+  forceCreateNewWorkspace?: boolean
+  disabled?: boolean
 }
 
 export interface FilePanelType extends ViewPlugin {
   setWorkspace: ({ name, isLocalhost }, setEvent: boolean) => void
   createWorkspace: (name: string, workspaceTemplateName: string) => void
   renameWorkspace: (oldName: string, newName: string) => void
-  compileContractForUml: (path: string) => void
+  compileContractForUml?: (path: string) => void
   workspaceRenamed: ({ name }) => void
   workspaceCreated: ({ name }) => void
   workspaceDeleted: ({ name }) => void
@@ -81,7 +87,7 @@ export interface FilePanelType extends ViewPlugin {
   appManager: RemixAppManager
   registry?: any // registry
   pluginApi?: any
-  request: {
+  request?: {
     createWorkspace: () => void
     setWorkspace: (workspaceName: string) => void
     createNewFile: () => void
@@ -89,10 +95,10 @@ export interface FilePanelType extends ViewPlugin {
     getCurrentWorkspace: () => void
   } // api request,
   workspaces: any
-  registeredMenuItems: MenuItems // menu items
-  removedMenuItems: MenuItems
-  initialWorkspace: string
-  resetNewFile: () => void
+  registeredMenuItems?: MenuItems // menu items
+  removedMenuItems?: MenuItems
+  initialWorkspace?: string
+  resetNewFile?: () => void
   getWorkspaces: () => string[]
   expandPath: string[]
 }
@@ -128,6 +134,7 @@ export interface FileExplorerProps {
     dispatchCopyShareURL: (path:string) => Promise<void>,
     dispatchCopyFolder: (src: string, dest: string) => Promise<void>,
     dispatchRunScript: (path: string) => Promise<void>,
+    dispatchSignTypedData: (path: string) => Promise<void>,
     dispatchPublishToGist: (path?: string, type?: string) => Promise<void>,
     dispatchEmitContextMenuEvent: (cmd: customAction) => Promise<void>,
     dispatchHandleClickFile: (path: string, type: WorkspaceElement) => Promise<void>,
@@ -159,6 +166,7 @@ export interface FileExplorerProps {
     dragStatus: (status: boolean) => void
     importFromIpfs: any
     importFromHttps: any
+    handleGitInit?: () => Promise<void>
     handleMultiCopies: any
     feTarget: { key: string, type: 'file' | 'folder' }[]
     setFeTarget: Dispatch<React.SetStateAction<{
@@ -180,6 +188,10 @@ export interface FileExplorerMenuProps {
   uploadFolder: (target: EventTarget & HTMLInputElement) => void
   importFromIpfs: any
   importFromHttps: any
+  connectToLocalFileSystem?: any
+  handleGitInit?: () => Promise<void>
+  revealInExplorer?: () => void
+  cloneGitRepository?: () => void
   tooltipPlacement?: Placement
 }
 export interface FileExplorerContextMenuProps {
@@ -194,6 +206,7 @@ export interface FileExplorerContextMenuProps {
   pushChangesToGist?: (path?: string) => void
   publishFolderToGist?: (path?: string) => void
   publishFileToGist?: (path?: string) => void
+  signTypedData?: (path?: string) => void
   runScript?: (path: string) => void
   emit?: (cmd: customAction) => void
   pageX: number

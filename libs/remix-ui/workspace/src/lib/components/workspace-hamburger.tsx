@@ -16,11 +16,15 @@ export interface HamburgerMenuProps {
   cloneGitRepository: () => void
   downloadWorkspaces: () => void
   restoreBackup: () => void
+  migrateToCloud?: () => void
+  downloadCloudSnapshots?: () => void
   hideIconsMenu: (showMenu: boolean) => void
+  handleRemixdWorkspace: () => void
   showIconsMenu: boolean
   hideWorkspaceOptions: boolean
   hideLocalhostOptions: boolean
   hideFileOperations: boolean
+  isCloudMode?: boolean
 }
 
 export function HamburgerMenu(props: HamburgerMenuProps) {
@@ -99,6 +103,17 @@ export function HamburgerMenu(props: HamburgerMenuProps) {
       ></HamburgerMenuItem>
       <Dropdown.Divider className="border mb-0 mt-0 remixui_menuhr" style={{ pointerEvents: 'none' }} />
       <HamburgerMenuItem
+        kind="localFileSystem"
+        fa="far fa-desktop"
+        hideOption={hideWorkspaceOptions}
+        actionOnClick={() => {
+          props.handleRemixdWorkspace()
+          props.hideIconsMenu(!showIconsMenu)
+        }}
+        platforms={[appPlatformTypes.web]}
+      ></HamburgerMenuItem>
+      <Dropdown.Divider className="border mb-0 mt-0 remixui_menuhr" style={{ pointerEvents: 'none' }} />
+      <HamburgerMenuItem
         kind={selectedWorkspace.isGist ? "updateGist" : "publishToGist"}
         fa="fab fa-github"
         hideOption={hideWorkspaceOptions || hideLocalhostOptions}
@@ -139,6 +154,31 @@ export function HamburgerMenu(props: HamburgerMenuProps) {
         }}
         platforms={[appPlatformTypes.web]}
       ></HamburgerMenuItem>
+      {props.isCloudMode && (
+        <>
+          <Dropdown.Divider className="border mb-0 mt-0 remixui_menuhr" style={{ pointerEvents: 'none' }} />
+          <HamburgerMenuItem
+            kind="migrateToCloud"
+            fa="fas fa-cloud-upload-alt"
+            hideOption={hideWorkspaceOptions}
+            actionOnClick={() => {
+              props.migrateToCloud?.()
+              props.hideIconsMenu(!showIconsMenu)
+            }}
+            platforms={[appPlatformTypes.web]}
+          ></HamburgerMenuItem>
+          <HamburgerMenuItem
+            kind="downloadCloudSnapshots"
+            fa="fas fa-history"
+            hideOption={hideWorkspaceOptions}
+            actionOnClick={() => {
+              props.downloadCloudSnapshots?.()
+              props.hideIconsMenu(!showIconsMenu)
+            }}
+            platforms={[appPlatformTypes.web]}
+          ></HamburgerMenuItem>
+        </>
+      )}
     </>
   )
 }

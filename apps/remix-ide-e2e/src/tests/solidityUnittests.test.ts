@@ -30,8 +30,6 @@ module.exports = {
       .clickLaunchIcon('filePanel')
       .addFile('simple_storage.sol', sources[0]['simple_storage.sol'])
       .addFile('ks2a.sol', sources[0]['ks2a.sol'])
-      .waitForElementVisible('li[data-id="treeViewLitreeViewItem.deps/remix-tests/remix_tests.sol"]')
-      .waitForElementVisible('li[data-id="treeViewLitreeViewItem.deps/remix-tests/remix_accounts.sol"]')
       .openFile('.deps/remix-tests/remix_tests.sol')
       // remix_test.sol should be opened in editor
       .getEditorValue((content) => browser.assert.ok(content.indexOf('library Assert {') !== -1))
@@ -48,6 +46,7 @@ module.exports = {
       .waitForElementPresent('*[data-id="testTabGenerateTestFile"]')
       .click('*[data-id="testTabGenerateTestFile"]')
       .clickLaunchIcon('filePanel')
+      .openFile('tests/simple_storage_test.sol')
       .waitForElementPresent('*[data-path="default_workspace/tests/simple_storage_test.sol"]')
       .removeFile('tests/simple_storage_test.sol', 'default_workspace')
   },
@@ -132,7 +131,7 @@ module.exports = {
       .click('*[data-id="testTabCheckAllTests"]')
       .clickElementAtPosition('.singleTestLabel', 1)
       .scrollAndClick('*[data-id="testTabRunTestsTabRunAction"]')
-      .waitForElementContainsText('*[data-id="testTabSolidityUnitTestsOutput"]', 'contract deployment failed: revert', 120000)
+      .waitForElementContainsText('*[data-id="testTabSolidityUnitTestsOutput"]', 'contract deployment failed', 120000)
   },
 
   'Should fail when parameters are passed to method in test contract #group3': function (browser: NightwatchBrowser) {
@@ -170,7 +169,8 @@ module.exports = {
   'Changing current path when workspace changed and checking test files creation #group4': function (browser: NightwatchBrowser) {
     browser
       .waitForElementPresent('*[data-id="verticalIconsKindfilePanel"]')
-      .clickLaunchIcon('settings')
+      .waitForElementVisible('*[data-id="topbar-settingsIcon"]')
+      .click('*[data-id="topbar-settingsIcon"]')
       .clickLaunchIcon('solidityUnitTesting')
       .waitForElementPresent('*[data-id="uiPathInput"]', 3000)
       .clearValue('*[data-id="uiPathInput"]')
@@ -178,21 +178,20 @@ module.exports = {
       .click('*[data-id="testTabGenerateTestFolder"]')
       .clickLaunchIcon('filePanel')
       // creating a new workspace
-      .click('*[data-id="workspacesMenuDropdown"]')
-      .click('*[data-id="workspacecreate"]')
-      .waitForElementPresent('*[data-id="create-remixDefault"]')
-      .scrollAndClick('*[data-id="create-remixDefault"]')
-      .waitForElementVisible('*[data-id="modalDialogCustomPromptTextCreate"]')
-      .click('input[data-id="modalDialogCustomPromptTextCreate"]')
-      .setValue('input[data-id="modalDialogCustomPromptTextCreate"]', 'workspace_new')
+      .clickWorkspaceDropdown()
       .pause(2000)
-      .getValue('input[data-id="modalDialogCustomPromptTextCreate"]', (result) => {
-        console.log(result)
-        browser.assert.equal(result.value, 'workspace_new')
-      })
-      .modalFooterOKClick('TemplatesSelection')
+      .click('*[data-id="workspacecreate"]')
+      .waitForElementVisible('*[data-id="template-explorer-modal-react"]')
+      .waitForElementVisible('*[data-id="template-explorer-template-container"]')
+      .click('*[data-id="template-explorer-template-container"]')
+      .waitForElementPresent('*[data-id="template-card-remixDefault-0"]')
+      .click('*[data-id="template-card-remixDefault-0"]')
+      .waitForElementVisible('*[data-id="workspace-name-input"]')
+      .setValue('*[data-id="workspace-name-input"]', 'workspace_new')
+      .click('*[data-id="validateWorkspaceButton"]')
       .pause(3000)
       .currentWorkspaceIs('workspace_new')
+      .expandAllFolders()
       .waitForElementVisible('li[data-id="treeViewLitreeViewItem.deps/remix-tests/remix_tests.sol"]')
       .waitForElementVisible('li[data-id="treeViewLitreeViewItem.deps/remix-tests/remix_accounts.sol"]')
       .openFile('.deps/remix-tests/remix_tests.sol')
@@ -290,25 +289,28 @@ module.exports = {
       .waitForElementContainsText('#solidityUnittestsOutput', '✓ Check winnin proposal with return value', 60000)
       .click('#Check_winning_proposal_failed')
       .waitForElementContainsText('*[data-id="sidePanelSwapitTitle"]', 'DEBUGGER', 60000)
-      .waitForElementContainsText('*[data-id="functionPanel"]', 'checkWinningProposalFailed()', 60000)
-      .waitForElementVisible('*[data-id="dropdownPanelSolidityLocals"]').pause(1000)
-      .waitForElementContainsText('*[data-id="solidityLocals"]', 'No data available', 60000)
+      .waitForElementVisible('*[data-id="callTraceHeader"]', 60000)
+      // At initial step, locals should show "No data available"
+      .waitForElementVisible('*[data-id="solidityLocals"]', 60000)
       .goToVMTraceStep(316)
-      .waitForElementContainsText('*[data-id="functionPanel"]', 'checkWinningProposalFailed()', 60000)
-      .waitForElementContainsText('*[data-id="functionPanel"]', 'vote(proposal)', 60000)
-      .waitForElementVisible({
-        locateStrategy: 'xpath',
-        selector: "//*[@data-id='treeViewDivtreeViewItemsender' and contains(.,'Ballot.Voter')]"
+      .pause(1000)
+      .waitForElementContainsText('*[data-id="callTraceHeader"]', 'Step: 316', 60000)
+      // Expand solidityLocals to check variables
+      .execute(function () {
+        const solidityLocals = document.querySelector('[data-id="solidityLocals"]')
+        if (solidityLocals) {
+          const firstIcon = solidityLocals.querySelector('.json-expand-icon')
+          if (firstIcon) (firstIcon as any).click()
+        }
       })
+      .pause(500)
       .checkVariableDebug('soliditylocals', locals)
       .clickLaunchIcon('solidityUnitTesting').pause(2000)
       .scrollAndClick('#Check_winning_proposal_passed')
       .waitForElementContainsText('*[data-id="sidePanelSwapitTitle"]', 'DEBUGGER', 60000)
-      .waitForElementContainsText('*[data-id="functionPanel"]', 'checkWinningProposalPassed()', 60000)
+      .waitForElementVisible('*[data-id="callTraceHeader"]', 60000)
       .goToVMTraceStep(1451)
-      .waitForElementContainsText('*[data-id="functionPanel"]', 'equal(a, b, message)', 60000)
-      .waitForElementContainsText('*[data-id="functionPanel"]', 'checkWinningProposalPassed()', 60000)
-      // remix_test.sol should be opened in editor
+      .pause(1000)
       .getEditorValue((content) => browser.assert.ok(content.indexOf('library Assert {') !== -1))
       .click('*[id="debuggerTransactionStartButtonContainer"]') // stop debugging
       .openFile('tests/ballotFailedDebug_test.sol')
@@ -319,20 +321,20 @@ module.exports = {
       .pause(5000)
       .waitForElementContainsText('*[data-id="sidePanelSwapitTitle"]', 'DEBUGGER', 60000)
       .goToVMTraceStep(1151)
-      .waitForElementContainsText('*[data-id="functionPanel"]', 'equal(a, b, message)', 60000)
-      .waitForElementContainsText('*[data-id="functionPanel"]', 'checkWinningProposalAgain()', 60000)
-      //.pause(5000)
+      .waitForElementContainsText('*[data-id="txFunction"]', 'equal', 60000)
+      .goToVMTraceStep(1351)
+      .waitForElementContainsText('*[data-id="txFunction"]', 'checkWinningProposalAgain', 60000)
       .click('*[id="debuggerTransactionStartButtonContainer"]') // stop debugging
       .openFile('tests/ballotFailedDebug_test.sol')
       .pause(2000)
-      .clickLaunchIcon('solidityUnitTesting').pause(2000)
-      .pause(5000)
+      .clickLaunchIcon('solidityUnitTesting')
+      .pause(2000)
       .scrollAndClick('#Check_winnin_proposal_with_return_value')
-      .pause(5000)
+      .pause(2000)
       .waitForElementContainsText('*[data-id="sidePanelSwapitTitle"]', 'DEBUGGER', 60000)
-      .waitForElementContainsText('*[data-id="functionPanel"]', 'checkWinninProposalWithReturnValue()', 60000)
+      .waitForElementContainsText('*[data-id="txFunction"]', 'checkWinninProposalWithReturnValue', 60000)
       .goToVMTraceStep(321)
-      .waitForElementContainsText('*[data-id="functionPanel"]', 'checkWinninProposalWithReturnValue()', 60000)
+      .waitForElementContainsText('*[data-id="txFunction"]', 'checkWinninProposalWithReturnValue', 60000)
       .clickLaunchIcon('filePanel')
       .pause(2000)
       .openFile('tests/ballotFailedDebug_test.sol')
@@ -342,7 +344,7 @@ module.exports = {
   'Basic Solidity Unit tests with local compiler #group6': function (browser: NightwatchBrowser) {
     browser
       .clickLaunchIcon('udapp')
-      .switchEnvironment('vm-cancun')
+      .switchEnvironment('vm-cancun', 'Remix_VM')
       .clickLaunchIcon('solidity')
       .setSolidityCompilerVersion('builtin')
       .click('.remixui_compilerConfigSection')

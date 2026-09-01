@@ -19,7 +19,7 @@ export default (
         })(),
         click: function(item, focusedWindow) {
           if (focusedWindow)
-            focusedWindow.webContents.toggleDevTools();
+            (focusedWindow as BrowserWindow).webContents.toggleDevTools();
         }
       },
       {
@@ -27,7 +27,7 @@ export default (
         accelerator: 'CmdOrCtrl+R',
         click: function(item, focusedWindow) {
           if (focusedWindow)
-            focusedWindow.reload();
+            (focusedWindow as BrowserWindow).reload();
         }
       },
       {
@@ -49,10 +49,10 @@ export default (
         accelerator: 'CmdOrCtrl+=',
         click: function(item, focusedWindow) {
           if (focusedWindow){
-            let factor = focusedWindow.webContents.getZoomFactor()
+            let factor = (focusedWindow as BrowserWindow).webContents.getZoomFactor()
             if (factor < 4) {
               factor = factor + 0.25
-              focusedWindow.webContents.setZoomFactor(factor)
+              ;(focusedWindow as BrowserWindow).webContents.setZoomFactor(factor)
             }
           }
         }
@@ -62,15 +62,12 @@ export default (
         accelerator: 'CmdOrCtrl+-',
         click: function(item, focusedWindow) {
           if (focusedWindow){
-            let factor = focusedWindow.webContents.getZoomFactor()
+            let factor = (focusedWindow as BrowserWindow).webContents.getZoomFactor()
             console.log(factor)
-            if (factor > 1.25) {
+            if (factor > 0.1) {
               factor = factor - 0.25
-              focusedWindow.webContents.setZoomFactor(factor)
-            }else{
-              focusedWindow.webContents.setZoomFactor(1)
+              ;(focusedWindow as BrowserWindow).webContents.setZoomFactor(Math.max(0.1, factor))
             }
-
           }
         }
       },
@@ -80,7 +77,7 @@ export default (
         click: function(item, focusedWindow) {
           if (focusedWindow)
           {
-            focusedWindow.webContents.setZoomFactor(1)
+            (focusedWindow as BrowserWindow).webContents.setZoomFactor(1)
           }
         }
       },

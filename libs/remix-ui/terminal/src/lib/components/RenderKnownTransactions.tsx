@@ -25,8 +25,29 @@ const RenderKnownTransactions = ({ tx, receipt, resolvedData, logs, index, plugi
     }
   }
 
-  const from = tx.from
-  const to = resolvedData.contractName + '.' + resolvedData.fn
+  let from = tx.from
+  let to = resolvedData.contractName + '.' + resolvedData.fn
+  if (tx.isUserOp) {
+    // Track event with signature: ExecutionFromModuleSuccess (index_topic_1 address module)
+    // to get sender smart account address
+    const fromAddrLog = receipt.logs.find(e => e.topics[0] === "0x6895c13664aa4f67288b25d7a21d7aaa34916e355fb9b6fae0a139a9085becb8")
+    // Track event with signature: UserOperationSponsored (index_topic_1 bytes32 userOpHash, index_topic_2 address user, uint8 paymasterMode, address token, uint256 tokenAmountPaid, uint256 exchangeRate)
+    // to get paymaster address
+    const paymasterAddrLog = receipt.logs.find(e => e.topics[0] === "0x7a270f29ae17e8e2304ff1245deb50c3b6206bca82928d904f3e284d35c5ffd2")
+    if (fromAddrLog) {
+      from = fromAddrLog.address
+      tx.bundler = tx.from
+    }
+    if (paymasterAddrLog) tx.paymaster = paymasterAddrLog.address
+    if (tx.to) {
+      tx.entrypoint = tx.to
+      to = null // for deployment transaction
+    }
+    if (tx.originTo) {
+      to = tx.originTo
+    }
+
+  }
   const txType = 'knownTx'
   const options = { from, to, tx, logs }
   return (
@@ -37,6 +58,7 @@ const RenderKnownTransactions = ({ tx, receipt, resolvedData, logs, index, plugi
         <div className="remix_ui_terminal_buttons">
           <div
             className="remix_ui_terminal_debug btn btn-primary btn-sm"
+            style={{ padding:'.05rem .25rem', fontSize:'12px', fontWeight:700, fontFamily:'var(--bs-font-sans-serif)' }}
             data-shared="txLoggerDebugButton"
             data-id={`txLoggerDebugButton${tx.hash}`}
             onClick={(event) => debug(event, tx)}
@@ -49,6 +71,10 @@ const RenderKnownTransactions = ({ tx, receipt, resolvedData, logs, index, plugi
       {showTableHash.includes(tx.hash)
         ? showTable(
           {
+            'isUserOp': tx.isUserOp,
+            'bundler': tx.bundler,
+            'paymaster': tx.paymaster,
+            'entrypoint': tx.entrypoint,
             'hash': tx.hash,
             'status': receipt !== null ? receipt.status : null,
             'isCall': tx.isCall,

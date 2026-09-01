@@ -10,7 +10,7 @@ const profile = {
   kind: 'other'
 }
 
-export class TabProxy extends Plugin {
+export default class TabProxy extends Plugin {
   constructor (fileManager, editor) {
     super(profile)
     this.event = new EventEmitter()
@@ -22,6 +22,9 @@ export class TabProxy extends Plugin {
     this.loadedTabs = []
     this.dispatch = null
     this.themeQuality = 'dark'
+    this.maximize = false
+    this.isDebugging = false
+    this.canRunScenario = false
   }
 
   async onActivation () {
@@ -29,6 +32,44 @@ export class TabProxy extends Plugin {
       this.themeQuality = theme.quality
       // update invert for all icons
       this.renderComponent()
+    })
+
+    // Track if debugging session is actually active (not just the button state)
+    this.debuggingSessionActive = false
+
+    // Listen for debugger events to update isDebugging state
+    this.on('debugger', 'debuggingStarted', () => {
+      this.debuggingSessionActive = true
+      this.isDebugging = true
+      this.renderComponent()
+    })
+
+    this.on('debugger', 'debuggingStopped', () => {
+      this.debuggingSessionActive = false
+      this.isDebugging = false
+      this.renderComponent()
+    })
+
+    // Listen for side panel plugin changes
+    this.on('sidePanel', 'focusChanged', (pluginName) => {
+      if (pluginName === 'debugger' && this.debuggingSessionActive) {
+        // Returning to debugger while debugging is in progress - show Ask RemixAI button
+        this.isDebugging = true
+        this.renderComponent()
+      } else if (pluginName !== 'debugger' && pluginName !== 'remixaiassistant' && this.isDebugging) {
+        // Switching away from debugger - hide Ask RemixAI button (but not when showing AI assistant)
+        this.isDebugging = false
+        this.renderComponent()
+      }
+    })
+
+    // Also listen for menuicons changes (for main panel plugins)
+    this.on('menuicons', 'showContent', (pluginName) => {
+      // Don't hide Ask RemixAI button when switching to AI assistant during debugging
+      if (pluginName !== 'debugger' && pluginName !== 'remixaiassistant' && this.isDebugging) {
+        this.isDebugging = false
+        this.renderComponent()
+      }
     })
 
     this.on('fileManager', 'filesAllClosed', () => {
@@ -74,8 +115,10 @@ export class TabProxy extends Plugin {
       }
     })
 
-    this.on('fileManager', 'currentFileChanged', (file) => {
+    this.on('fileManager', 'currentFileChanged', async (file) => {
       const workspace = this.fileManager.currentWorkspace()
+
+      await this.checkIfCanRunScenario(file)
 
       if (this.fileManager.mode === 'browser') {
         const workspacePath = workspace + '/' + file
@@ -113,6 +156,13 @@ export class TabProxy extends Plugin {
           this.emit('closeFile', file)
         })
         this.tabsApi.activateTab(path)
+      }
+    })
+
+    this.on('fileManager', 'fileSaved', async (file) => {
+      const currentFile = this.fileManager.currentFile()
+      if (currentFile && currentFile === file && file.endsWith('.json')) {
+        await this.checkIfCanRunScenario(file)
       }
     })
 
@@ -163,7 +213,7 @@ export class TabProxy extends Plugin {
       this.tabsApi.activateTab(name)
     })
 
-    this.on('manager', 'pluginActivated', ({ name, location, displayName, icon, description }) => {
+    this.on('manager', 'pluginActivated', ({ name, location, displayName, icon, description, show = true }) => {
       if (location === 'mainPanel') {
         this.addTab(
           name,
@@ -178,9 +228,10 @@ export class TabProxy extends Plugin {
             this.call('manager', 'deactivatePlugin', name)
           },
           icon,
-          description
+          description,
+          show
         )
-        this.switchTab(name)
+        show && this.switchTab(name)
       }
     })
 
@@ -197,18 +248,63 @@ export class TabProxy extends Plugin {
     } catch (e) {
       console.log('theme plugin has an issue: ', e)
     }
+    try {
+      const currentFile = await this.call('fileManager', 'getCurrentFile')
+      if (currentFile) {
+        await this.checkIfCanRunScenario(currentFile)
+      }
+    } catch (error) {
+      console.error('Error getting current file:', error)
+    }
+
     this.renderComponent()
+  }
+
+  async checkIfCanRunScenario(currentFile) {
+    try {
+      if (!currentFile) {
+        this.canRunScenario = false
+        this.renderComponent()
+        return
+      }
+      const fileContent = await this.call('fileManager', 'readFile', currentFile)
+      const parsedContent = JSON.parse(fileContent)
+
+      // Check if it has the required structure of a scenario file
+      const isValidScenario =
+        parsedContent &&
+        typeof parsedContent === 'object' &&
+        'accounts' in parsedContent &&
+        typeof parsedContent.accounts === 'object' &&
+        'linkReferences' in parsedContent &&
+        typeof parsedContent.linkReferences === 'object' &&
+        'transactions' in parsedContent &&
+        Array.isArray(parsedContent.transactions) &&
+        'abis' in parsedContent &&
+        typeof parsedContent.abis === 'object'
+
+      this.canRunScenario = isValidScenario
+      this.renderComponent()
+    } catch (error) {
+      this.canRunScenario = false
+      this.renderComponent()
+    }
   }
 
   focus (name) {
     this.emit('switchApp', name)
+    const tabIndex = this.loadedTabs.findIndex(tab => tab.name === name)
+    if (tabIndex !== -1) {
+      this.loadedTabs[tabIndex].show = true
+    }
     this.tabsApi.activateTab(name)
   }
 
-  switchTab (tabName) {
+  async switchTab (tabName) {
     if (this._handlers[tabName]) {
       this._handlers[tabName].switchTo()
       this.tabsApi.activateTab(tabName)
+      this.emit('switchApp', tabName)
     }
   }
 
@@ -251,7 +347,7 @@ export class TabProxy extends Plugin {
    * @param {string} description
    * @returns
    */
-  addTab (name, title, switchTo, close, icon, description = '') {
+  addTab (name, title, switchTo, close, icon, description = '', show = true) {
     if (this._handlers[name]) return this.renderComponent()
 
     if ((name.endsWith('.vy') && icon === undefined) || title.includes('Vyper')) {
@@ -282,7 +378,8 @@ export class TabProxy extends Plugin {
             title,
             icon,
             tooltip: name,
-            iconClass: getPathIcon(name)
+            iconClass: getPathIcon(name),
+            show
           })
           formatPath.shift()
           if (formatPath.length > 0) {
@@ -299,7 +396,8 @@ export class TabProxy extends Plugin {
                 title: duplicateTabTitle,
                 icon,
                 tooltip: duplicateTabTooltip || duplicateTabTitle,
-                iconClass: getPathIcon(duplicateTabName)
+                iconClass: getPathIcon(duplicateTabName),
+                show
               }
             }
           }
@@ -313,7 +411,8 @@ export class TabProxy extends Plugin {
         title,
         icon,
         tooltip: description || title,
-        iconClass: getPathIcon(name)
+        iconClass: getPathIcon(name),
+        show
       })
     }
 
@@ -324,17 +423,30 @@ export class TabProxy extends Plugin {
   removeTab (name, currentFileTab) {
     delete this._handlers[name]
     let previous = currentFileTab
+    if(!this.loadedTabs.find(tab => tab.name === name)) return // prevent removing tab that doesn't exist
     this.loadedTabs = this.loadedTabs.filter((tab, index) => {
       if (!previous && tab.name === name) {
-        if(index - 1  >= 0 && this.loadedTabs[index - 1])
-          previous = this.loadedTabs[index - 1]
-        else if (index + 1 && this.loadedTabs[index + 1])
-          previous = this.loadedTabs[index + 1]
+        previous = this.getPreviousVisibleTab(index)
+        if (!previous) previous = this.getNextVisibleTab(index)
       }
       return tab.name !== name
     })
     this.renderComponent()
     if (previous) this.switchTab(previous.name)
+  }
+
+  getPreviousVisibleTab (index) {
+    for (let i = index - 1; i >= 0; i--) {
+      if (this.loadedTabs[i].show) return this.loadedTabs[i]
+    }
+    return null
+  }
+
+  getNextVisibleTab (index) {
+    for (let i = index + 1; i < this.loadedTabs.length; i++) {
+      if (this.loadedTabs[i].show) return this.loadedTabs[i]
+    }
+    return null
   }
 
   addHandler (type, fn) {
@@ -356,6 +468,9 @@ export class TabProxy extends Plugin {
       onZoomOut={state.onZoomOut}
       onReady={state.onReady}
       themeQuality={state.themeQuality}
+      maximize={this.maximize}
+      isDebugging={state.isDebugging}
+      canRunScenario={state.canRunScenario}
     />
   }
 
@@ -365,6 +480,7 @@ export class TabProxy extends Plugin {
         const name = this.loadedTabs[index].name
         if (this._handlers[name]) this._handlers[name].switchTo()
         this.emit('tabCountChanged', this.loadedTabs.length)
+        this.emit('switchApp', name)
       }
     }
 
@@ -391,7 +507,9 @@ export class TabProxy extends Plugin {
       onZoomIn,
       onZoomOut,
       onReady,
-      themeQuality: this.themeQuality
+      themeQuality: this.themeQuality,
+      isDebugging: this.isDebugging,
+      canRunScenario: this.canRunScenario
     })
   }
 

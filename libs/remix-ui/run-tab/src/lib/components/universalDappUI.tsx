@@ -1,21 +1,28 @@
 // eslint-disable-next-line no-use-before-define
-import React, { useEffect, useState } from 'react'
+import React, { useContext, useEffect, useState, useCallback } from 'react'
 import { FormattedMessage, useIntl } from 'react-intl'
+import IpfsHttpClient from 'ipfs-http-client'
 import { UdappProps } from '../types'
 import { FuncABI } from '@remix-project/core-plugin'
 import { CopyToClipboard } from '@remix-ui/clipboard'
 import * as remixLib from '@remix-project/remix-lib'
 import * as ethJSUtil from '@ethereumjs/util'
+import { ModalTypes } from '@remix-ui/app'
+
 import { ContractGUI } from './contractGUI'
 import { TreeView, TreeViewItem } from '@remix-ui/tree-view'
 import { BN } from 'bn.js'
 import { CustomTooltip, is0XPrefixed, isHexadecimal, isNumeric, shortenAddress } from '@remix-ui/helper'
-const _paq = (window._paq = window._paq || [])
+import { TrackingContext } from '@remix-ide/tracking'
+import { UdappEvent } from '@remix-api'
+import { trackMatomoEvent } from '@remix-api'
 
 const txHelper = remixLib.execution.txHelper
 
 export function UniversalDappUI(props: UdappProps) {
   const intl = useIntl()
+  const { trackMatomoEvent: baseTrackEvent } = useContext(TrackingContext)
+  const trackMatomoEvent = <T extends UdappEvent = UdappEvent>(event: T) => baseTrackEvent?.<T>(event)
   const [toggleExpander, setToggleExpander] = useState<boolean>(true)
   const [contractABI, setContractABI] = useState<FuncABI[]>(null)
   const [address, setAddress] = useState<string>('')
@@ -28,7 +35,6 @@ export function UniversalDappUI(props: UdappProps) {
   useEffect(() => {
     if (!props.instance.abi) {
       const abi = txHelper.sortAbiFunction(props.instance.contractData.abi)
-
       setContractABI(abi)
     } else {
       setContractABI(props.instance.abi)
@@ -56,7 +62,7 @@ export function UniversalDappUI(props: UdappProps) {
     }
   }, [props.instance.balance])
 
-  const sendData = () => {
+  const sendData = async () => {
     setLlIError('')
     const fallback = txHelper.getFallbackInterface(contractABI)
     const receive = txHelper.getReceiveInterface(contractABI)
@@ -66,7 +72,7 @@ export function UniversalDappUI(props: UdappProps) {
       contractName: props.instance.name,
       contractABI: contractABI
     }
-    const amount = props.sendValue
+    const amount = await props.plugin.call('udappDeploy', 'getValue')
 
     if (amount !== '0') {
       // check for numeric and receive/fallback
@@ -117,18 +123,27 @@ export function UniversalDappUI(props: UdappProps) {
   const remove = async() => {
     if (props.instance.isPinned) {
       await unsavePinnedContract()
-      _paq.push(['trackEvent', 'udapp', 'pinContracts', 'removePinned'])
+      trackMatomoEvent({ category: 'udapp', action: 'pinContracts', name: 'removePinned', isClick: false })
     }
     props.removeInstance(props.index)
   }
 
   const unpinContract = async() => {
     await unsavePinnedContract()
-    _paq.push(['trackEvent', 'udapp', 'pinContracts', 'unpinned'])
+    trackMatomoEvent({ category: 'udapp', action: 'pinContracts', name: 'unpinned', isClick: false })
     props.unpinInstance(props.index)
   }
 
   const pinContract = async() => {
+    const provider = await props.plugin.call('blockchain', 'getProviderObject')
+
+    if (!provider.config.statePath && provider.config.isRpcForkedState) {
+      // we can't pin a contract in the following case:
+      // - state is not persisted
+      // - future state is browser stored (e.g it's not just a simple RPC provider)
+      props.plugin.call('notification', 'toast', 'Cannot pin this contract in the current context: state is not persisted. Please fork this provider to start pinning a contract to it.')
+      return
+    }
     const workspace = await props.plugin.call('filePanel', 'getCurrentWorkspace')
     const objToSave = {
       name: props.instance.name,
@@ -137,31 +152,20 @@ export function UniversalDappUI(props: UdappProps) {
       filePath: props.instance.filePath || `${workspace.name}/${props.instance.contractData.contract.file}`,
       pinnedAt: Date.now()
     }
-    await props.plugin.call('fileManager', 'writeFile', `.deploys/pinned-contracts/${props.plugin.REACT_API.chainId}/${props.instance.address}.json`, JSON.stringify(objToSave, null, 2))
-    _paq.push(['trackEvent', 'udapp', 'pinContracts', `pinned at ${props.plugin.REACT_API.chainId}`])
+
+    const savePath = `.deploys/pinned-contracts/${props.plugin.REACT_API.chainId}/${props.instance.address}.json`
+
+    await props.plugin.call('fileManager', 'writeFile', savePath, JSON.stringify(objToSave, null, 2))
+
+    trackMatomoEvent({ category: 'udapp', action: 'pinContracts', name: `pinned at ${props.plugin.REACT_API.chainId}`, isClick: false })
     props.pinInstance(props.index, objToSave.pinnedAt, objToSave.filePath)
   }
 
-  const runTransaction = (lookupOnly, funcABI: FuncABI, valArr, inputsValues, funcIndex?: number) => {
-    if (props.instance.isPinned) _paq.push(['trackEvent', 'udapp', 'pinContracts', 'interactWithPinned'])
-    const functionName = funcABI.type === 'function' ? funcABI.name : `(${funcABI.type})`
-    const logMsg = `${lookupOnly ? 'call' : 'transact'} to ${props.instance.name}.${functionName}`
-
-    props.runTransactions(
-      props.index,
-      lookupOnly,
-      funcABI,
-      inputsValues,
-      props.instance.name,
-      contractABI,
-      props.instance.contractData,
-      address,
-      logMsg,
-      props.mainnetPrompt,
-      props.gasEstimationPrompt,
-      props.passphrasePrompt,
-      funcIndex
-    )
+  const runTransaction = async (lookupOnly, funcABI: FuncABI, valArr, inputsValues, funcIndex?: number) => {
+    if (props.instance.isPinned) trackMatomoEvent({ category: 'udapp', action: 'pinContracts', name: 'interactWithPinned', isClick: false })
+    // const functionName = funcABI.type === 'function' ? funcABI.name : `(${funcABI.type})`
+    // const logMsg = `${lookupOnly ? 'call' : 'transact'} to ${props.instance.name}.${functionName}`
+    await props.runTransactions(props.index, lookupOnly, funcABI, inputsValues, props.instance.name, contractABI, props.instance.contractData, address, funcIndex)
   }
 
   const extractDataDefault = (item, parent?) => {
@@ -213,8 +217,8 @@ export function UniversalDappUI(props: UdappProps) {
 
   const label = (key: string | number, value: string) => {
     return (
-      <div className="d-flex mt-2 flex-row label_item">
-        <label className="small font-weight-bold mb-0 pr-1 label_key">{key}:</label>
+      <div className="d-flex mt-2 flex-row label_item align-items-baseline">
+        <label className="small fw-bold mb-0 pe-1 label_key">{key}:</label>
         <label className="m-0 label_value">{value}</label>
       </div>
     )
@@ -241,17 +245,17 @@ export function UniversalDappUI(props: UdappProps) {
 
   return (
     <div
-      className={`instance udapp_instance udapp_run-instance border-dark ${toggleExpander ? 'udapp_hidesub' : 'bg-light'}`}
+      className={`instance udapp_instance udapp_run-instance border-dark mt-1 ${toggleExpander ? 'udapp_hidesub' : 'bg-light'}`}
       id={`instance${address}`}
       data-shared="universalDappUiInstance"
       data-id={props.instance.isPinned ? `pinnedInstance${address}` : `unpinnedInstance${address}`}
     >
-      <div className="udapp_title pb-0 alert alert-secondary">
-        <span data-id={`universalDappUiTitleExpander${props.index}`} className="btn udapp_titleExpander" onClick={toggleClass} style={{ padding: "0.45rem" }}>
+      <div className="udapp_title pb-0">
+        <span data-id={`universalDappUiTitleExpander${props.index}`} className="btn udapp_titleExpander p-1" onClick={toggleClass}>
           <i className={`fas ${toggleExpander ? 'fa-angle-right' : 'fa-angle-down'}`} aria-hidden="true"></i>
         </span>
         <div className="input-group udapp_nameNbuts">
-          <div className="udapp_titleText input-group-prepend">
+          <div className="udapp_titleText input-group-text p-0 bg-transparent">
             { props.instance.isPinned ? ( <CustomTooltip placement="top" tooltipClasses="text-nowrap" tooltipId="udapp_udappUnpinTooltip" tooltipText={props.instance.isPinned ? `Pinned for network: ${props.plugin.REACT_API.chainId}, at:  ${new Date(props.instance.pinnedAt).toLocaleString()}` : '' }>
               <span className="input-group-text udapp_spanTitleText">
                 {props.instance.name} at {shortenAddress(address)}
@@ -260,21 +264,21 @@ export function UniversalDappUI(props: UdappProps) {
               {props.instance.name} at {shortenAddress(address)} ({props.context})
             </span>) }
           </div>
-          <div className="btn" style={{ padding: '0.15rem' }}>
+          <div className="btn p-0">
             <CopyToClipboard tip={intl.formatMessage({ id: 'udapp.copyAddress' })} content={address} direction={'top'} />
           </div>
-          { props.instance.isPinned ? ( <div className="btn" style={{ padding: '0.15rem', marginLeft: '-0.5rem' }}>
+          { props.instance.isPinned ? ( <div className="btn p-0">
             <CustomTooltip placement="top" tooltipClasses="text-nowrap" tooltipId="udapp_udappUnpinTooltip" tooltipText={<FormattedMessage id="udapp.tooltipTextUnpin" />}>
               <i className="fas fa-thumbtack p-2" aria-hidden="true" data-id="universalDappUiUdappUnpin" onClick={unpinContract}></i>
             </CustomTooltip>
-          </div> ) : ( <div className="btn" style={{ padding: '0.15rem', marginLeft: '-0.5rem' }}>
+          </div> ) : ( <div className="btn p-0">
             <CustomTooltip placement="top" tooltipClasses="text-nowrap" tooltipId="udapp_udappPinTooltip" tooltipText={<FormattedMessage id="udapp.tooltipTextPin" />}>
               <i className="far fa-thumbtack p-2" aria-hidden="true" data-id="universalDappUiUdappPin" onClick={pinContract}></i>
             </CustomTooltip>
           </div> )
           }
         </div>
-        <div className="btn" style={{ padding: '0.15rem', marginLeft: '-0.5rem' }}>
+        <div className="btn p-0">
           <CustomTooltip placement="top" tooltipClasses="text-nowrap" tooltipId="udapp_udappCloseTooltip" tooltipText={<FormattedMessage id="udapp.tooltipTextRemove" />}>
             <i className="fas fa-times p-2" aria-hidden="true" data-id="universalDappUiUdappClose" onClick={remove}></i>
           </CustomTooltip>
@@ -286,20 +290,6 @@ export function UniversalDappUI(props: UdappProps) {
             <span className="remixui_runtabBalancelabel run-tab">
               <b><FormattedMessage id="udapp.balance" />:</b> {instanceBalance} ETH
             </span>
-            <div></div>
-            <div className="d-flex align-self-center">
-              {props.exEnvironment && props.exEnvironment.startsWith('injected') && (
-                <CustomTooltip placement="top" tooltipClasses="text-nowrap" tooltipId="udapp_udappEditTooltip" tooltipText={<FormattedMessage id="udapp.tooltipTextEdit" />}>
-                  <i
-                    data-id="instanceEditIcon"
-                    className="fas fa-edit pr-3"
-                    onClick={() => {
-                      props.editInstance(props.instance)
-                    }}
-                  ></i>
-                </CustomTooltip>
-              )}
-            </div>
           </div>
           { props.instance.isPinned && props.instance.pinnedAt ? (
             <div className="d-flex" data-id="instanceContractPinnedAt">
@@ -326,6 +316,10 @@ export function UniversalDappUI(props: UdappProps) {
                 <div key={index}>
                   <ContractGUI
                     getVersion={props.getVersion}
+                    getCompilerDetails={props.getCompilerDetails}
+                    evmCheckComplete={props.evmCheckComplete}
+                    plugin={props.plugin}
+                    runTabState={props.runTabState}
                     funcABI={funcABI}
                     clickCallBack={(valArray: {name: string; type: string}[], inputsValues: string) => {
                       runTransaction(lookupOnly, funcABI, valArray, inputsValues, index)
@@ -368,17 +362,17 @@ export function UniversalDappUI(props: UdappProps) {
             >
               { // receive method added to solidity v0.6.x. use this as diff.
                 props.solcVersion.canReceive === false ? (
-                  <a href={`https://solidity.readthedocs.io/en/v${props.solcVersion.version}/contracts.html`} target="_blank" rel="noreferrer">
-                    <i aria-hidden="true" className="fas fa-info my-2 mr-1"></i>
+                  <a href={`https://docs.soliditylang.org/en/v${props.solcVersion.version}/contracts.html`} target="_blank" rel="noreferrer">
+                    <i aria-hidden="true" className="fas fa-info my-2 me-1"></i>
                   </a>
-                ) :<a href={`https://solidity.readthedocs.io/en/v${props.solcVersion.version}/contracts.html#receive-ether-function`} target="_blank" rel="noreferrer">
-                  <i aria-hidden="true" className="fas fa-info my-2 mr-1"></i>
+                ) :<a href={`https://docs.soliditylang.org/en/v${props.solcVersion.version}/contracts.html#receive-ether-function`} target="_blank" rel="noreferrer">
+                  <i aria-hidden="true" className="fas fa-info my-2 me-1"></i>
                 </a>
               }
             </CustomTooltip>
           </div>
           <div className="d-flex flex-column align-items-start">
-            <label className="">CALLDATA</label>
+            <label className=""><FormattedMessage id="udapp.calldataLabel" /></label>
             <div className="d-flex justify-content-end w-100 align-items-center">
               <CustomTooltip
                 placement="bottom"
@@ -395,7 +389,7 @@ export function UniversalDappUI(props: UdappProps) {
                   className="btn udapp_instanceButton p-0 w-50 border-warning text-warning"
                   onClick={sendData}
                 >
-                  Transact
+                  <FormattedMessage id="udapp.transactButton" />
                 </button>
               </CustomTooltip>
             </div>
@@ -410,3 +404,5 @@ export function UniversalDappUI(props: UdappProps) {
     </div>
   )
 }
+
+// [QuickDapp] Legacy generateAIDappWithPlugin removed — DApp creation now handled via AI Assistant chatPipe → generate_dapp MCP tool

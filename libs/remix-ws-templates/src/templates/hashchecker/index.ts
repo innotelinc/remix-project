@@ -1,4 +1,4 @@
-export default async () => {
+export default async (opts, plugin) => {
   return {
     // @ts-ignore
     'circuits/calculate_hash.circom': (await import('raw-loader!./circuits/calculate_hash.circom')).default,
@@ -15,6 +15,8 @@ export default async () => {
     // @ts-ignore
     'templates/plonk_verifier.sol.ejs': (await import('!!raw-loader!./templates/plonk_verifier.sol.ejs')).default,
     // @ts-ignore
-    'README.md': (await import('raw-loader!./README.md')).default
+    'README.md': (await import('raw-loader!./README.md')).default,
+    // @ts-ignore
+    'remix.config.json': (await import('raw-loader!./remix.config')).default
   }
 }

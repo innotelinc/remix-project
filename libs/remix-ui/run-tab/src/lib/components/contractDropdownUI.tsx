@@ -1,16 +1,19 @@
 // eslint-disable-next-line no-use-before-define
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useContext, useEffect, useRef, useState } from 'react'
 import { FormattedMessage, useIntl } from 'react-intl'
 import { ContractDropdownProps, DeployMode } from '../types'
 import { ContractData, FuncABI, OverSizeLimit } from '@remix-project/core-plugin'
 import * as ethJSUtil from '@ethereumjs/util'
 import { ContractGUI } from './contractGUI'
 import { CustomTooltip, deployWithProxyMsg, upgradeWithProxyMsg } from '@remix-ui/helper'
-import { title } from 'process'
-const _paq = (window._paq = window._paq || [])
+import { TrackingContext } from '@remix-ide/tracking'
+import { UdappEvent } from '@remix-api'
+import { VerificationSettingsUI } from './verificationSettingsUI'
 
 export function ContractDropdownUI(props: ContractDropdownProps) {
   const intl = useIntl()
+  const { trackMatomoEvent: baseTrackEvent } = useContext(TrackingContext)
+  const trackMatomoEvent = <T extends UdappEvent = UdappEvent>(event: T) => baseTrackEvent?.<T>(event)
   const [abiLabel, setAbiLabel] = useState<{
     display: string
     content: string
@@ -41,6 +44,50 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
   const contractsRef = useRef<HTMLSelectElement>(null)
   const atAddressValue = useRef<HTMLInputElement>(null)
   const { contractList, loadType, currentFile, compilationSource, currentContract, compilationCount, deployOptions } = props.contracts
+  const [isVerifyChecked, setVerifyChecked] = useState<boolean>(false)
+  const [isNetworkSupported, setNetworkSupported] = useState<boolean>(false)
+
+  useEffect(() => {
+    const checkSupport = async () => {
+      if (props.plugin && props.networkName) {
+        try {
+          const supportedChain = await getSupportedChain(props.plugin)
+          const chainExistsInList = !!supportedChain
+
+          let isConfigValid = false
+          if (chainExistsInList) {
+            const status = props.plugin.blockchain.getCurrentNetworkStatus()
+            const currentChainId = status?.network?.id?.toString()
+            if (currentChainId) {
+              isConfigValid = await props.plugin.call(
+                'contract-verification',
+                'isVerificationSupportedForChain',
+                currentChainId
+              )
+            }
+          }
+
+          const isSupported = chainExistsInList && isConfigValid
+          setNetworkSupported(isSupported)
+
+          if (isSupported) {
+            const saved = window.localStorage.getItem('deploy-verify-contract-checked')
+            setVerifyChecked(saved !== null ? JSON.parse(saved) : true)
+          } else {
+            setVerifyChecked(false)
+          }
+        } catch (e) {
+          console.error("Failed to check verification support:", e)
+          setNetworkSupported(false)
+          setVerifyChecked(false)
+        }
+      } else {
+        setNetworkSupported(false)
+        setVerifyChecked(false)
+      }
+    }
+    checkSupport()
+  }, [props.networkName, props.plugin])
 
   useEffect(() => {
     enableContractNames(Object.keys(props.contracts.contractList).length > 0)
@@ -80,6 +127,7 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
         content: '',
       })
       if (!currentContract) enableAtAddress(false)
+      if (currentContract && loadedAddress) enableAtAddress(true)
     } else {
       setAbiLabel({
         display: 'none',
@@ -176,13 +224,13 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
       setContractOptions({
         disabled: true,
         title:
-          loadType === 'sol' ? (
-            <FormattedMessage id="udapp.contractOptionsTitle3" />
-          ) : (
-            <span className="text-start">
-              <FormattedMessage id="udapp.contractOptionsTitle4" values={{ br: <br /> }} />
-            </span>
-          ),
+        ['sol', 'vyper', 'lexon', 'contract'].includes(loadType) ? (
+          <FormattedMessage id="udapp.contractOptionsTitle3" />
+        ) : (
+          <span className="text-start">
+            <FormattedMessage id="udapp.contractOptionsTitle4" values={{ br: <br /> }} />
+          </span>
+        ),
       })
     }
   }
@@ -201,7 +249,7 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
 
     if (isProxyDeployment) {
       props.modal(
-        'Deploy Implementation & Proxy (ERC1967)',
+        intl.formatMessage({ id: 'udapp.deployImplementationProxy' }),
         deployWithProxyMsg(),
         intl.formatMessage({ id: 'udapp.proceed' }),
         () => {
@@ -213,7 +261,8 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
             props.mainnetPrompt,
             isOverSizePrompt,
             args,
-            deployMode
+            deployMode,
+            isVerifyChecked
           )
         },
         intl.formatMessage({ id: 'udapp.cancel' }),
@@ -221,7 +270,7 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
       )
     } else if (isContractUpgrade) {
       props.modal(
-        'Deploy Implementation & Update Proxy',
+        intl.formatMessage({ id: 'udapp.deployImplementationUpdateProxy' }),
         upgradeWithProxyMsg(),
         intl.formatMessage({ id: 'udapp.proceed' }),
         () => {
@@ -233,14 +282,15 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
             props.mainnetPrompt,
             isOverSizePrompt,
             args,
-            deployMode
+            deployMode,
+            isVerifyChecked
           )
         },
         intl.formatMessage({ id: 'udapp.cancel' }),
         () => {}
       )
     } else {
-      props.createInstance(loadedContractData, props.gasEstimationPrompt, props.passphrasePrompt, props.publishToStorage, props.mainnetPrompt, isOverSizePrompt, args, deployMode)
+      props.createInstance(loadedContractData, props.gasEstimationPrompt, props.passphrasePrompt, props.publishToStorage, props.mainnetPrompt, isOverSizePrompt, args, deployMode, isVerifyChecked)
     }
   }
 
@@ -249,7 +299,7 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
     if (!value) {
       enableAtAddress(false)
     } else {
-      if (loadType === 'sol' || loadType === 'abi') {
+      if (['sol', 'vyper', 'lexon', 'contract', 'abi'].includes(loadType)) {
         enableAtAddress(true)
       } else {
         enableAtAddress(false)
@@ -275,11 +325,9 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
     setaddressIsValid(true)
   }
 
-  const handleCheckedIPFS = () => {
-    const checkedState = !props.ipfsCheckedState
-
-    props.setIpfsCheckedState(checkedState)
-    window.localStorage.setItem(`ipfs/${props.exEnvironment}/${props.networkName}`, checkedState.toString())
+  const handleVerifyCheckedChange = (isChecked: boolean) => {
+    setVerifyChecked(isChecked)
+    window.localStorage.setItem('deploy-verify-contract-checked', JSON.stringify(isChecked))
   }
 
   const updateCompilerName = () => {
@@ -311,6 +359,23 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
   const isValidProxyUpgrade = (proxyAddress: string) => {
     const solcVersion = loadedContractData.metadata ? JSON.parse(loadedContractData.metadata).compiler.version : ''
     return props.isValidProxyUpgrade(proxyAddress, loadedContractData.contractName || loadedContractData.name, loadedContractData.compiler.source, loadedContractData.compiler.data, solcVersion)
+  }
+
+  const getSupportedChain = async (plugin: any): Promise<any> => {
+    try {
+      const response = await fetch('https://chainid.network/chains.json')
+      if (!response.ok) return null
+      const allChains = await response.json()
+
+      const status = plugin.blockchain.getCurrentNetworkStatus()
+      if (status.error || !status.network) return null
+
+      const currentChainId = parseInt(status.network.id)
+      return allChains.find(chain => chain.chainId === currentChainId) || null
+    } catch (e) {
+      console.error(e)
+      return null
+    }
   }
 
   const checkSumWarning = () => {
@@ -374,15 +439,22 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
       evmVersion = JSON.parse(loadedContractData.metadata).settings.evmVersion
     }
   } catch (err) {}
+
+  const deployButtonTitle = isVerifyChecked
+    ? intl.formatMessage({ id: 'udapp.deployAndVerify', defaultMessage: 'Deploy & Verify' })
+    : intl.formatMessage({ id: 'udapp.deploy' })
+
+  const deployButtonWidthClass = isVerifyChecked ? 'w-auto' : 'w-50'
+
   return (
     <div className="udapp_container mb-2" data-id="contractDropdownContainer">
       <div className="d-flex justify-content-between">
         <div className="d-flex justify-content-between align-items-end">
-          <label className="udapp_settingsLabel pr-1">
+          <label className="udapp_settingsLabel pe-1">
             <FormattedMessage id="udapp.contract" />
           </label>
           {compilerName && compilerName !== '' && compilerName !== 'remix' && (
-            <label className="udapp_settingsCompiledBy badge badge-secondary" data-id="udappCompiledBy">
+            <label className="udapp_settingsCompiledBy badge text-bg-secondary" data-id="udappCompiledBy">
               <FormattedMessage
                 id="udapp.compiledBy"
                 values={{
@@ -394,30 +466,30 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
           {props.remixdActivated ? (
             <CustomTooltip
               placement={'right'}
-              tooltipClasses="text-wrap text-left"
+              tooltipClasses="text-wrap text-start"
               tooltipId="info-sync-compiled-contract"
               tooltipText={
-                <span className="text-left">
+                <span className="text-start">
                   <FormattedMessage id="udapp.infoSyncCompiledContractTooltip" values={{ br: <br /> }} />
                 </span>
               }
             >
               <i style={{ cursor: 'pointer' }} onClick={(_) => {
                 props.syncContracts()
-                _paq.push(['trackEvent', 'udapp', 'syncContracts', compilationSource ? compilationSource : 'compilationSourceNotYetSet'])
+                trackMatomoEvent({ category: 'udapp', action: 'syncContracts', name: compilationSource ? compilationSource : 'compilationSourceNotYetSet', isClick: true })
               }} className="udapp_syncFramework udapp_icon fa fa-refresh" aria-hidden="true"></i>
             </CustomTooltip>
           ) : null}
         </div>
       </div>
       <div className="udapp_subcontainer">
-        <CustomTooltip placement={'auto-end'} tooltipClasses="text-nowrap text-left" tooltipId="remixUdappContractNamesTooltip" tooltipText={contractOptions.title}>
+        <CustomTooltip placement={'auto-end'} tooltipClasses="text-nowrap text-start" tooltipId="remixUdappContractNamesTooltip" tooltipText={contractOptions.title}>
           <select
             ref={contractsRef}
             value={currentContract}
             name={contractOptions.title.toString()}
             onChange={handleContractChange}
-            className="udapp_contractNames w-100 custom-select"
+            className="udapp_contractNames w-100 form-select p-2 border"
             disabled={contractOptions.disabled}
             style={{
               display: loadType === 'abi' && !isContractFile(currentFile) ? 'none' : 'block',
@@ -443,15 +515,15 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
       {evmVersion && loadedContractData && (
         <CustomTooltip
           placement={'auto-end'}
-          tooltipClasses="text-wrap text-left"
+          tooltipClasses="text-wrap text-start"
           tooltipId="info-evm-version-warn"
           tooltipText={
-            <span className="text-left">
+            <span className="text-start">
               <FormattedMessage id="udapp.warningEvmVersion" values={{ evmVersion }} />
             </span>
           }
         >
-          <span className="udapp_evmVersion badge alert-warning">
+          <span className="udapp_evmVersion badge alert-warning mb-2">
             <FormattedMessage id="udapp.evmVersion" />: {evmVersion}
           </span>
         </CustomTooltip>
@@ -460,8 +532,15 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
         <div className="udapp_deployDropdown">
           {((contractList[currentFile] && contractList[currentFile].filter((contract) => contract)) || []).length > 0 && loadedContractData && (
             <div>
+              {isNetworkSupported && (
+                <VerificationSettingsUI
+                  isVerifyChecked={isVerifyChecked}
+                  onVerifyCheckedChange={handleVerifyCheckedChange}
+                />
+              )}
               <ContractGUI
-                title={intl.formatMessage({ id: 'udapp.deploy' })}
+                title={deployButtonTitle}
+                getCompilerDetails={props.getCompilerDetails}
                 isDeploy={true}
                 deployOption={deployOptions[currentFile] && deployOptions[currentFile][currentContract] ? deployOptions[currentFile][currentContract].options : null}
                 initializerOptions={
@@ -470,7 +549,7 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
                 funcABI={constructorInterface}
                 clickCallBack={clickCallback}
                 inputs={constructorInputs}
-                widthClass="w-50"
+                widthClass={deployButtonWidthClass}
                 evmBC={loadedContractData.bytecodeObject}
                 lookupOnly={false}
                 proxy={props.proxy}
@@ -481,45 +560,25 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
                 solcVersion={props.solCompilerVersion}
                 setSolcVersion={props.setCompilerVersion}
                 getVersion={props.getCompilerVersion}
+                evmCheckComplete={props.evmCheckComplete}
+                setEvmCheckComplete={props.setEvmCheckComplete}
+                plugin={props.plugin}
+                runTabState={props.runTabState}
               />
-              <div className="d-flex py-1 align-items-center custom-control custom-checkbox">
-                <input
-                  id="deployAndRunPublishToIPFS"
-                  data-id="contractDropdownIpfsCheckbox"
-                  className="form-check-input custom-control-input"
-                  type="checkbox"
-                  onChange={handleCheckedIPFS}
-                  checked={props.ipfsCheckedState}
-                />
-                <CustomTooltip
-                  placement={'auto-end'}
-                  tooltipClasses="text-wrap text-left"
-                  tooltipId="remixIpfsUdappTooltip"
-                  tooltipText={
-                    <span className="text-start">
-                      <FormattedMessage id="udapp.remixIpfsUdappTooltip" values={{ br: <br /> }} />
-                    </span>
-                  }
-                >
-                  <label htmlFor="deployAndRunPublishToIPFS" data-id="contractDropdownIpfsCheckboxLabel" className="m-0 form-check-label custom-control-label udapp_checkboxAlign">
-                    <FormattedMessage id="udapp.publishTo" /> IPFS
-                  </label>
-                </CustomTooltip>
-              </div>
             </div>
           )}
         </div>
         <div className="pt-2 d-flex flex-column sudapp_button udapp_atAddressSect">
           <div className="d-flex flex-row">
-            <CustomTooltip placement={'top-end'} tooltipClasses="text-wrap text-left" tooltipId="runAndDeployAddresstooltip" tooltipText={atAddressOptions.title}>
-              <div id="runAndDeployAtAdressButtonContainer" data-title={atAddressOptions.title}>
+            <CustomTooltip placement={'top-end'} tooltipClasses="text-wrap text-start" tooltipId="runAndDeployAddresstooltip" tooltipText={atAddressOptions.title}>
+              <div id="runAndDeployAtAddressButtonContainer" data-bs-title={atAddressOptions.title}>
                 <button
                   className={atAddressOptions.disabled ? "disabled udapp_atAddress btn btn-sm py-2 btn-primary" : "udapp_atAddress btn btn-sm py-2 btn-primary"}
-                  id="runAndDeployAtAdressButton"
+                  id="runAndDeployAtAddressButton"
                   disabled={atAddressOptions.disabled}
                   style={{ border: 'none' }}
                   onClick={loadFromAddress}
-                  data-title={atAddressOptions.title}
+                  data-bs-title={atAddressOptions.title}
                 >
                   <FormattedMessage id="udapp.atAddress" />
                 </button>
@@ -527,7 +586,7 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
             </CustomTooltip>
             <CustomTooltip
               placement={'top-end'}
-              tooltipClasses="text-wrap text-left"
+              tooltipClasses="text-wrap text-start"
               tooltipId="runAndDeployAddressInputtooltip"
               tooltipText={<FormattedMessage id="udapp.addressOfContract" />}
             >
@@ -542,7 +601,7 @@ export function ContractDropdownUI(props: ContractDropdownProps) {
             </CustomTooltip>
           </div>
           {!addressIsValid && (
-            <span className="text-danger text-right">
+            <span className="text-danger text-end">
               <FormattedMessage id="udapp.addressNotValid" />
             </span>
           )}

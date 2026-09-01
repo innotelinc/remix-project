@@ -10,8 +10,9 @@ module.exports = {
   'Should select multiple items in file explorer #group1': function (browser: NightwatchBrowser) {
     const selectedElements = []
     browser
-      .openFile('contracts')
+      .expandAllFolders()
       .click({ selector: '//*[@data-id="treeViewDivtreeViewItemcontracts/1_Storage.sol"]', locateStrategy: 'xpath' })
+      .pause(500)
       .findElement({ selector: '//*[@data-id="treeViewDivtreeViewItemcontracts/2_Owner.sol"]', locateStrategy: 'xpath' }, (el) => {
         selectedElements.push(el)
       })
@@ -20,9 +21,9 @@ module.exports = {
         selectedElements.push(el)
       })
     browser.selectFiles(selectedElements)
-      .assert.visible('.bg-secondary[data-id="treeViewLitreeViewItemcontracts/1_Storage.sol"]')
-      .assert.visible('.bg-secondary[data-id="treeViewLitreeViewItemcontracts/2_Owner.sol"]')
-      .assert.visible('.bg-secondary[data-id="treeViewLitreeViewItemtests"]')
+      .assert.visible('.remixui_selected[data-id="treeViewLitreeViewItemcontracts/1_Storage.sol"]')
+      .assert.visible('.remixui_selected[data-id="treeViewLitreeViewItemcontracts/2_Owner.sol"]')
+      .assert.visible('.remixui_selected[data-id="treeViewLitreeViewItemtests"]')
   },
   'Should drag and drop multiple files in file explorer to tests folder #group1': function (browser: NightwatchBrowser) {
     const selectedElements = []
@@ -47,6 +48,8 @@ module.exports = {
                 .dragAndDrop('li[data-id="treeViewLitreeViewItemcontracts/1_Storage.sol"]', id)
                 .waitForElementPresent({ selector: '[data-id="fileSystemModalDialogModalFooter-react"] .modal-ok', abortOnFailure: false })
                 .execute(function () { (document.querySelector('[data-id="fileSystemModalDialogModalFooter-react"] .modal-ok') as HTMLElement).click() })
+                .openFile('tests/1_Storage.sol')
+                .openFile('tests/2_Owner.sol')
                 .waitForElementVisible({ selector: 'li[data-id="treeViewLitreeViewItemtests/1_Storage.sol"]', abortOnFailure: false })
                 .waitForElementVisible({ selector: 'li[data-id="treeViewLitreeViewItemtests/2_Owner.sol"]', abortOnFailure: false })
                 .waitForElementNotPresent({ selector: 'li[data-id="treeViewLitreeViewItemcontracts/1_Storage.sol"]', abortOnFailure: false })
@@ -84,6 +87,7 @@ module.exports = {
                 .dragAndDrop('li[data-id="treeViewLitreeViewItemtests"]', id)
                 .waitForElementPresent({ selector: '[data-id="fileSystemModalDialogModalFooter-react"] .modal-ok', abortOnFailure: false })
                 .execute(function () { (document.querySelector('[data-id="fileSystemModalDialogModalFooter-react"] .modal-ok') as HTMLElement).click() })
+                .openFile('contracts/tests')
                 .waitForElementVisible({ selector: 'li[data-id="treeViewLitreeViewItemcontracts/tests"]', abortOnFailure: false })
                 .waitForElementVisible({ selector: 'li[data-id="treeViewLitreeViewItemcontracts/README.txt"]', abortOnFailure: false })
                 .waitForElementVisible({ selector: 'li[data-id="treeViewLitreeViewItemcontracts/scripts"]', abortOnFailure: false })

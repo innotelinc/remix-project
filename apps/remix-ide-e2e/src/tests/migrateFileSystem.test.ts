@@ -2,7 +2,7 @@
 import { NightwatchBrowser } from 'nightwatch'
 
 
-module.exports = {
+const tests = {
   '@disabled': true,
   'Should load the testmigration url #group1': function (browser: NightwatchBrowser) {
     browser.url('http://127.0.0.1:8080?e2e_testmigration=true')
@@ -101,17 +101,17 @@ module.exports = {
         browser.assert.equal(content, 'testing')
       })
   },
-  'Should have a artifacts file with JSON test data #group1 #group3 #group5 #group7': function (browser: NightwatchBrowser) {
+  'Should have an artifacts file with JSON test data #group1 #group3 #group5 #group7': function (browser: NightwatchBrowser) {
     browser.waitForElementVisible('*[data-id="remixIdeSidePanel"]', 5000)
-      .click('*[data-id="treeViewLitreeViewItemtest_contracts/artifacts"]')
-      .openFile('test_contracts/artifacts/Storage_metadata.json')
+      .click('*[data-id="treeViewLitreeViewItemartifacts"]')
+      .openFile('artifacts/Storage_metadata.json')
       .waitForElementVisible('*[id="editorView"]', 10000)
       .getEditorValue((content) => {
         const metadata = JSON.parse(content)
         browser.assert.equal(metadata.test, 'data')
       })
   },
-  'Should have a empty workspace #group1 #group3 #group5 #group7': function (browser: NightwatchBrowser) {
+  'Should have an empty workspace #group1 #group3 #group5 #group7': function (browser: NightwatchBrowser) {
     browser.waitForElementVisible('*[data-id="remixIdeSidePanel"]', 5000)
       .switchWorkspace('emptyspace')
   },
@@ -136,4 +136,12 @@ module.exports = {
       .assert.containsText('.alert-danger', 'An unknown error')
   },
 
+}
+
+const isFirefox = browser.options.desiredCapabilities?.browserName === 'firefox'
+
+if (isFirefox) {
+  module.exports = tests
+} else {
+  module.exports = {}
 }

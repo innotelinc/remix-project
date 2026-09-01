@@ -25,7 +25,7 @@ const tests = {
     },
 
     'run server #group1 #group2 #group3': function (browser: NightwatchBrowser) {
-        browser.perform(async (done) => {
+        browser.hideToolTips().perform(async (done) => {
             gitserver = await spawnGitServer('/tmp/')
             console.log('working directory', process.cwd())
             done()
@@ -47,11 +47,13 @@ const tests = {
             .pause(5000)
             .windowHandles(function (result) {
                 console.log(result.value)
-                browser.switchWindow(result.value[1])
+                browser.hideToolTips().switchWindow(result.value[1])
+                    .hideToolTips()
                     .waitForElementVisible('*[data-id="treeViewLitreeViewItem.git"]')
                     .hideToolTips()
             })
             .waitForElementVisible('*[data-id="treeViewLitreeViewItemREADME.md"]')
+            .saveScreenshot('./reports/screenshots/gitui1.png')
     },
     'Update settings for git #group1 #group2 #group3': function (browser: NightwatchBrowser) {
         browser.
@@ -65,8 +67,8 @@ const tests = {
             .setValue('*[data-id="githubEmail"]', 'git@example.com')
             .pause(1000)
             .click('*[data-id="saveGitHubCredentials"]')
-            .pause(1000)
             .modalFooterOKClick('github-credentials-error')
+            .pause(1000)
 
     },
 
@@ -82,19 +84,47 @@ const tests = {
                 selector: "//*[@data-status='new-untracked' and @data-file='/test.txt']",
                 locateStrategy: 'xpath'
             })
+            .saveScreenshot('./reports/screenshots/gitui4.png')
             .waitForElementVisible('*[data-id="addToGitChangestest.txt"]')
+            .saveScreenshot('./reports/screenshots/gitui5.png')
             .pause(1000)
             .click('*[data-id="addToGitChangestest.txt"]')
+            .saveScreenshot('./reports/screenshots/gitui6.png')
             .waitForElementVisible({
                 selector: "//*[@data-status='added-staged' and @data-file='/test.txt']",
                 locateStrategy: 'xpath'
             })
+            .saveScreenshot('./reports/screenshots/gitui7.png')
             .setValue('*[data-id="commitMessage"]', 'testcommit')
+            .saveScreenshot('./reports/screenshots/gitui8.png')
+            .waitForElementPresent({
+                selector: '//*[@data-id="commitButton" and not(@disabled)]',
+                locateStrategy: 'xpath'
+            })
+            .saveScreenshot('./reports/screenshots/gitui9.png')
             .click('*[data-id="commitButton"]')
+            .saveScreenshot('./reports/screenshots/gitui10.png')
+            .execute(function() {
+                const el = document.querySelector('[data-id="terminalJournal"]');
+                if (el) {
+                    el.scrollTop = el.scrollHeight;
+                }
+            })
+            .waitForElementPresent({
+                selector: '//*[@data-id="commitButton" and @disabled]',
+                locateStrategy: 'xpath'
+            })
+            .saveScreenshot('./reports/screenshots/gitui11.png')
+            
+            .waitForElementNotPresent({
+                selector: "//*[@data-status='added-staged' and @data-file='/test.txt']",
+                locateStrategy: 'xpath'
+            })
     },
     'look at the commit #group1': function (browser: NightwatchBrowser) {
         browser
             .click('*[data-id="commits-panel"]')
+            .saveScreenshot('./reports/screenshots/gitui12.png')
             .waitForElementPresent({
                 selector: '//*[@data-id="commit-summary-testcommit-ahead"]',
                 locateStrategy: 'xpath'
@@ -126,7 +156,10 @@ const tests = {
     },
     'switch to origin2 #group4': function (browser: NightwatchBrowser) {
         browser
+            .waitForElementVisible('*[data-id="remotes-panel"]')
+            .pause(2000)
             .click('*[data-id="remotes-panel"]')
+            .waitForElementVisible('*[data-id="fetch-repositories"]')
             .waitForElementVisible('*[data-id="set-as-default-origin2"]')
             .click('*[data-id="set-as-default-origin2"]')
     },
@@ -163,8 +196,10 @@ const tests = {
     },
     'switch to origin #group4': function (browser: NightwatchBrowser) {
         browser
-            .pause(5000)
+            .waitForElementVisible('*[data-id="remotes-panel"]')
+            .pause(2000)
             .click('*[data-id="remotes-panel"]')
+            .waitForElementVisible('*[data-id="fetch-repositories"]')
             .waitForElementVisible('*[data-id="set-as-default-origin"]')
             .pause(1000)
             .click('*[data-id="set-as-default-origin"]')

@@ -1,21 +1,32 @@
 /* global ethereum */
 'use strict'
-import { Web3 } from 'web3'
+import { ethers, toNumber } from 'ethers'
 import { execution } from '@remix-project/remix-lib'
 import EventManager from '../lib/events'
 import { bytesToHex } from '@ethereumjs/util'
-const _paq = window._paq = window._paq || []
 
-let web3
+let provider
 
-const config  = { defaultTransactionType: '0x0' }
+// Helper function to track events using MatomoManager
+function track(event) {
+  try {
+    const matomoManager = window._matomoManagerInstance
+    if (matomoManager && matomoManager.trackEvent) {
+      matomoManager.trackEvent(event)
+    }
+  } catch (error) {
+    console.debug('Tracking error:', error)
+  }
+}
+/*
 if (typeof window !== 'undefined' && typeof window.ethereum !== 'undefined') {
   var injectedProvider = window.ethereum
-  web3 = new Web3(injectedProvider)
+  provider = new ethers.BrowserProvider(injectedProvider, 'any')
 } else {
-  web3 = new Web3(new Web3.providers.HttpProvider('http://localhost:8545'))
-}
-web3.eth.setConfig(config)
+  provider = new ethers.JsonRpcProvider('http://localhost:8545')
+}*/
+
+provider = new ethers.AbstractProvider()
 
 /*
   trigger contextChanged, web3EndpointChanged
@@ -23,21 +34,22 @@ web3.eth.setConfig(config)
 export class ExecutionContext {
   constructor () {
     this.event = new EventManager()
-    this.executionContext = 'vm-cancun'
+    this.executionContext = 'vm-osaka'
     this.lastBlock = null
     this.blockGasLimitDefault = 4300000
     this.blockGasLimit = this.blockGasLimitDefault
-    this.currentFork = 'cancun'
+    this.currentFork = 'osaka'
     this.mainNetGenesisHash = '0xd4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3'
     this.customNetWorks = {}
     this.blocks = {}
     this.latestBlockNumber = 0
     this.txs = {}
     this.customWeb3 = {} // mapping between a context name and a web3.js instance
+    this.isConnected = false
   }
 
   init (config) {
-    this.executionContext = 'vm-cancun'
+    this.executionContext = 'vm-osaka'
     this.event.trigger('contextChanged', [this.executionContext])
   }
 
@@ -49,10 +61,6 @@ export class ExecutionContext {
     return this.customNetWorks[this.executionContext]
   }
 
-  getSelectedAddress () {
-    return injectedProvider ? injectedProvider.selectedAddress : null
-  }
-
   getCurrentFork () {
     return this.currentFork
   }
@@ -62,59 +70,69 @@ export class ExecutionContext {
   }
 
   setWeb3 (context, web3) {
-    web3.setConfig(config)
     this.customWeb3[context] = web3
   }
 
   web3 () {
     if (this.customWeb3[this.executionContext]) return this.customWeb3[this.executionContext]
-    return web3
+    return provider
   }
 
-  detectNetwork (callback) {
-    return new Promise((resolve, reject) => {
-      if (this.isVM()) {
-        callback && callback(null, { id: '-', name: 'VM' })
-        return resolve({ id: '-', name: 'VM' })
-      } else {
-        if (!web3.currentProvider) {
-          callback && callback('No provider set')
-          return reject('No provider set')
-        }
-        const cb = (err, id) => {
-          let name = null
-          if (err) name = 'Unknown'
-          // https://github.com/ethereum/EIPs/blob/master/EIPS/eip-155.md
-          else if (id === 1) name = 'Main'
-          else if (id === 3) name = 'Ropsten'
-          else if (id === 4) name = 'Rinkeby'
-          else if (id === 5) name = 'Goerli'
-          else if (id === 42) name = 'Kovan'
-          else if (id === 11155111) name = 'Sepolia'
-          else name = 'Custom'
-  
-          if (id === 1) {
-            web3.eth.getBlock(0).then((block) => {
-              if (block && block.hash !== this.mainNetGenesisHash) name = 'Custom'
-              callback && callback(err, { id, name, lastBlock: this.lastBlock, currentFork: this.currentFork })
-              return resolve({ id, name, lastBlock: this.lastBlock, currentFork: this.currentFork })
-            }).catch((error) => {
-              callback && callback(error)
-              return reject(error)
-            })
-          } else {
-            callback && callback(err, { id, name, lastBlock: this.lastBlock, currentFork: this.currentFork })
-            return resolve({ id, name, lastBlock: this.lastBlock, currentFork: this.currentFork })
+  async detectNetwork () {
+    if (this.isVM()) {
+      return { id: '-', name: 'VM' }
+    } else {
+      if (!provider) {
+        throw new Error('No provider set')
+      }
+      const network = await provider.getNetwork()
+      const id = parseInt(network.chainId)
+      let name = 'Custom'
+      let networkNativeCurrency = { name: "Ether", symbol: "ETH", decimals: 18 }
+      // https://github.com/ethereum/EIPs/blob/master/EIPS/eip-155.md
+      if (id === 1) name = 'Main'
+      else if (id === 11155111) name = 'Sepolia'
+      else {
+        let networkDetails = localStorage.getItem('networkDetails')
+        if (!networkDetails) networkDetails = '{}'
+        networkDetails = JSON.parse(networkDetails)
+        if (networkDetails[id]) {
+          name = networkDetails[id].name
+          networkNativeCurrency = networkDetails[id].nativeCurrency
+        } else {
+          const response = await fetch('https://chainid.network/chains.json')
+          if (response.ok) {
+            const networks = await response.json()
+            const connectedNetwork = networks.find((n) => n.chainId === id)
+            if (connectedNetwork) {
+              name = connectedNetwork.name
+              networkNativeCurrency = connectedNetwork.nativeCurrency
+              networkDetails[id] = { name, nativeCurrency:  networkNativeCurrency}
+              localStorage.setItem('networkDetails', JSON.stringify(networkDetails))
+            }
           }
         }
-        web3.eth.net.getId().then(id=>cb(null,parseInt(id))).catch(err=>cb(err))
       }
-    })
+        
+      if (id === 1) {
+        try {
+          const block = await provider.getBlock(0)
+
+          if (block && block.hash !== this.mainNetGenesisHash) name = 'Custom'
+          return { id: id.toString(), name, lastBlock: this.lastBlock, currentFork: this.currentFork, networkNativeCurrency }
+        } catch(error) {
+          // Rabby wallet throws an error at this point. We are in that case unable to check the genesis hash.
+          return { id: id.toString(), name, lastBlock: this.lastBlock, currentFork: this.currentFork, networkNativeCurrency }
+        }
+      } else {
+        return { id: id.toString(), name, lastBlock: this.lastBlock, currentFork: this.currentFork, networkNativeCurrency }
+      }
+    }
   }
 
-  removeProvider (name) {
+  async removeProvider (name) {
     if (name && this.customNetWorks[name]) {
-      if (this.executionContext === name) this.setContext('vm-cancun', null, null, null)
+      if (this.executionContext === name) await this.setContext('vm-osaka')
       delete this.customNetWorks[name]
       this.event.trigger('removeProvider', [name])
     }
@@ -131,30 +149,52 @@ export class ExecutionContext {
   }
 
   internalWeb3 () {
-    return web3
+    return provider
   }
 
-  setContext (context, endPointUrl, confirmCb, infoCb) {
+  async setContext (context) {
     this.executionContext = context
-    this.executionContextChange(context, endPointUrl, confirmCb, infoCb, null)
+    await this.executionContextChange(context)
   }
 
-  async executionContextChange (value, endPointUrl, confirmCb, infoCb, cb) {
-    _paq.push(['trackEvent', 'udapp', 'providerChanged', value.context])
+  discardPreviousConnectionAttempt () {
+    this.abortController && this.abortController.abort()
+  }
+
+  _withAbort(promise, signal) {
+    return new Promise((resolve, reject) => {
+      signal.throwIfAborted(); // already aborted before we start
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      promise.then(resolve).catch(reject);
+    })
+  }
+
+  async executionContextChange (value) {
+    // Track provider change event
+    track({
+      category: 'udapp',
+      action: 'providerChanged',
+      name: value.context,
+      isClick: false
+    })
     const context = value.context
-    if (!cb) cb = () => { /* Do nothing. */ }
-    if (!confirmCb) confirmCb = () => { /* Do nothing. */ }
-    if (!infoCb) infoCb = () => { /* Do nothing. */ }
     if (this.customNetWorks[context]) {
+      this.isConnected = false
       var network = this.customNetWorks[context]
-      await network.init()
-      this.currentFork = network.fork
-      this.executionContext = context
-      // injected
-      web3.setProvider(network.provider)
-      await this._updateChainContext()
-      this.event.trigger('contextChanged', [context])
-      cb()
+      try {
+        this.abortController = new AbortController();
+        await this._withAbort(network.init(), this.abortController.signal)
+        this.abortController = null
+        this.currentFork = network.config.fork
+        // injected
+        provider = new ethers.BrowserProvider(network.provider, 'any')
+        this.executionContext = context
+        this.isConnected = await this._updateChainContext()
+        this.event.trigger('contextChanged', [context])
+      } catch (e) {
+        console.error(e)
+        throw e
+      }
     }
   }
 
@@ -170,22 +210,24 @@ export class ExecutionContext {
   async _updateChainContext () {
     if (!this.isVM()) {
       try {
-        const block = await web3.eth.getBlock('latest')
+        const block = await provider.getBlock('latest')
         // we can't use the blockGasLimit cause the next blocks could have a lower limit : https://github.com/ethereum/remix/issues/506
-        this.blockGasLimit = (block && block.gasLimit) ? Math.floor(web3.utils.toNumber(block.gasLimit) - (5 * web3.utils.toNumber(block.gasLimit) / 1024)) : web3.utils.toNumber(this.blockGasLimitDefault)
+        this.blockGasLimit = (block && block.gasLimit) ? Math.floor(toNumber(block.gasLimit) - (5 * toNumber(block.gasLimit) / 1024)) : toNumber(this.blockGasLimitDefault)
         this.lastBlock = block
         try {
-          this.currentFork = execution.forkAt(await web3.eth.net.getId(), block.number)
+          this.currentFork = execution.forkAt((await provider.getNetwork()).chainId, block.number)
         } catch (e) {
-          this.currentFork = 'cancun'
+          this.currentFork = 'osaka'
           console.log(`unable to detect fork, defaulting to ${this.currentFork}..`)
           console.error(e)
         }
       } catch (e) {
         console.error(e)
         this.blockGasLimit = this.blockGasLimitDefault
+        return false
       }
     }
+    return true
   }
 
   listenOnLastBlock () {
@@ -197,12 +239,7 @@ export class ExecutionContext {
   txDetailsLink (network, hash) {
     const transactionDetailsLinks = {
       Main: 'https://www.etherscan.io/tx/',
-      Rinkeby: 'https://rinkeby.etherscan.io/tx/',
-      Ropsten: 'https://ropsten.etherscan.io/tx/',
-      Sepolia: 'https://sepolia.etherscan.io/tx/',
-      Kovan: 'https://kovan.etherscan.io/tx/',
-      Goerli: 'https://goerli.etherscan.io/tx/'
-    }
+      Sepolia: 'https://sepolia.etherscan.io/tx/'    }
 
     if (transactionDetailsLinks[network]) {
       return transactionDetailsLinks[network] + hash
@@ -215,7 +252,8 @@ export class ExecutionContext {
     const state = {
       db: Object.fromEntries(stateDb.db._database),
       blocks: blocksData.blocks,
-      latestBlockNumber: blocksData.latestBlockNumber
+      latestBlockNumber: blocksData.latestBlockNumber,
+      baseBlockNumber: blocksData.baseBlockNumber
     }
     const stringifyed = JSON.stringify(state, (key, value) => {
       if (key === 'db') {

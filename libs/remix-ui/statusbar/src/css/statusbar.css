@@ -1,4 +1,6 @@
-
+.remixui_statusbar {
+  white-space: nowrap;
+}
 .remixui_statusbar_gitstatus
 .remixui_statusbar_gitstatus:hover {
   cursor: pointer;
@@ -39,4 +41,18 @@
 
 .remixui_statusbar_custom_padding {
   padding: 0.421em;
+}
+
+/* Scam Details Alert Link Styles */
+#scamDetails a {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+#scamDetails a:focus,
+#scamDetails a:active,
+#scamDetails a:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
 }

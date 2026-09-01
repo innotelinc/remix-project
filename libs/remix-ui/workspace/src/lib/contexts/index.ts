@@ -2,12 +2,14 @@ import { branch } from '@remix-ui/git'
 import { customAction } from '@remixproject/plugin-api'
 import { createContext, SyntheticEvent } from 'react'
 import { BrowserState } from '../reducers/workspace'
+import { Plugin } from '@remixproject/engine'
+import { CustomRemixApi } from '@remix-api'
 
 export const FileSystemContext = createContext<{
   fs: any,
   plugin: any,
+  theme: any,
   modal:(title: string | JSX.Element, message: string | JSX.Element, okLabel: string, okFn: () => void, cancelLabel?: string, cancelFn?: () => void) => void,
-  dispatchInitWorkspace:() => Promise<void>,
   dispatchFetchDirectory:(path: string) => Promise<void>,
   dispatchAddInputField:(path: string, type: 'file' | 'folder') => Promise<void>,
   dispatchRemoveInputField:(path: string) => Promise<void>,
@@ -32,6 +34,7 @@ export const FileSystemContext = createContext<{
   dispatchCopyShareURL: (path: string) => Promise<void>,
   dispatchCopyFolder: (src: string, dest: string) => Promise<void>,
   dispatchRunScript: (path: string) => Promise<void>,
+  dispatchSignTypedData: (path: string) => Promise<void>,
   dispatchEmitContextMenuEvent: (cmd: customAction) => Promise<void>,
   dispatchHandleClickFile: (path: string, type: 'file' | 'folder' ) => Promise<void>
   dispatchHandleExpandPath: (paths: string[]) => Promise<void>,
@@ -50,6 +53,8 @@ export const FileSystemContext = createContext<{
   dispatchOpenElectronFolder: (path: string) => Promise<void>
   dispatchGetElectronRecentFolders: () => Promise<void>
   dispatchRemoveRecentFolder: (path: string) => Promise<void>
+  dispatchOpenElectronFolderInNewWindow: (path: string) => Promise<void>
+  dispatchRevealElectronFolderInExplorer: (path: string) => Promise<void>
   dispatchUpdateGitSubmodules: () => Promise<void>
     }>(null)
 

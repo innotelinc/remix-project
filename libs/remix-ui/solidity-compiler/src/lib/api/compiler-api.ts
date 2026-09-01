@@ -1,7 +1,7 @@
 import React from 'react';
-import { compile, helper } from '@remix-project/remix-solidity'
+import { compile, helper, Source, CompilerInputOptions, compilerInputFactory, CompilerInput, CompilationResult, SourceWithTarget } from '@remix-project/remix-solidity'
 import { CompileTabLogic, parseContracts } from '@remix-ui/solidity-compiler' // eslint-disable-line
-import type { ConfigurationSettings, iSolJsonBinData } from '@remix-project/remix-lib'
+import { ConfigurationSettings, iSolJsonBinData, execution } from '@remix-project/remix-lib'
 
 export const CompilerApiMixin = (Base) => class extends Base {
   currentFile: string
@@ -11,7 +11,7 @@ export const CompilerApiMixin = (Base) => class extends Base {
     } | Record<string, any>,
     contractsDetails: Record<string, any>,
     target?: string,
-    input?: Record<string, any>,
+    input?: string
   }
   compileErrors: any
   compileTabLogic: CompileTabLogic
@@ -27,7 +27,7 @@ export const CompilerApiMixin = (Base) => class extends Base {
   onSessionSwitched: () => void
   onContentChanged: () => void
   onFileClosed: (name: string) => void
-  statusChanged: (data: { key: string, title?: string, type?: string }) => void
+  statusChanged: (data: { key: string | number, title?: string, type?: string }) => void
 
   setSolJsonBinData: (urls: iSolJsonBinData) => void
 
@@ -106,12 +106,16 @@ export const CompilerApiMixin = (Base) => class extends Base {
     this.call('compileAndRun', 'runScriptAfterCompilation', fileName)
   }
 
-  compileWithHardhat (configFile) {
-    return this.call('hardhat', 'compile', configFile)
+  compileWithHardhat () {
+    return this.call('hardhat', 'compile')
   }
 
-  compileWithTruffle (configFile) {
-    return this.call('truffle', 'compile', configFile)
+  compileWithFoundry () {
+    return this.call('foundry', 'compile')
+  }
+
+  compileWithTruffle () {
+    return this.call('truffle', 'compile')
   }
 
   logToTerminal (content) {
@@ -122,8 +126,8 @@ export const CompilerApiMixin = (Base) => class extends Base {
     return this.compileTabLogic.compiler.state.lastCompilationResult
   }
 
-  getCompilerState () {
-    return this.compileTabLogic.getCompilerState()
+  async getCompilerState () {
+    return await this.compileTabLogic.getCompilerState()
   }
 
   /**
@@ -132,9 +136,13 @@ export const CompilerApiMixin = (Base) => class extends Base {
    * This function is used by remix-plugin compiler API.
    * @param {string} fileName to compile
    */
-  compile (fileName) {
+  async compile (fileName) {
     this.currentFile = fileName
-    return this.compileTabLogic.compileFile(fileName)
+    let type = 'remix'
+    if (await this.getAppParameter('hardhat-compilation')) type = 'hardhat'
+    else if (await this.getAppParameter('truffle-compilation')) type = 'truffle'
+    else if (await this.getAppParameter('foundry-compilation')) type = 'foundry'
+    return this.compileTabLogic.runCompiler(type, fileName)
   }
 
   compileFile (event) {
@@ -151,16 +159,22 @@ export const CompilerApiMixin = (Base) => class extends Base {
    * @param {object} map of source files.
    * @param {object} settings {evmVersion, optimize, runs, version, language}
    */
-  async compileWithParameters (compilationTargets, settings) {
-    const compilerState = this.getCompilerState()
-    settings.version = settings.version || compilerState.currentVersion
-    const res = await compile(compilationTargets, settings, (url, cb) => this.call('contentImport', 'resolveAndSave', url).then((result) => cb(null, result)).catch((error) => cb(error.message)))
+  async compileWithParameters (compilationTargets: Source, settings: CompilerInputOptions) {
+    const compilerState = await this.getCompilerState()
+    const version = settings.version || compilerState.currentVersion
+    const settingsCompile: CompilerInput = JSON.parse(compilerInputFactory(null, settings))
+    const res = await compile(
+      compilationTargets,
+      settingsCompile.settings,
+      settings.language,
+      version,
+      (url, cb) => this.call('contentImport', 'resolveAndSave', url).then((result) => cb(null, result)).catch((error) => cb(error.message)))
     return res
   }
 
   // This function is used for passing the compiler configuration to 'remix-tests'
-  getCurrentCompilerConfig () {
-    const compilerState = this.getCompilerState()
+  async getCurrentCompilerConfig () {
+    const compilerState = await this.getCompilerState()
     const compilerDetails: any = {
       currentVersion: compilerState.currentVersion,
       evmVersion: compilerState.evmVersion,
@@ -250,6 +264,11 @@ export const CompilerApiMixin = (Base) => class extends Base {
       if (this.onSetWorkspace) this.onSetWorkspace(workspace.isLocalhost, workspace.name)
     })
 
+    this.on('fs', 'workingDirChanged', (path) => {
+      this.resetResults()
+      if (this.onSetWorkspace) this.onSetWorkspace(true, 'localhost')
+    })
+
     this.on('fileManager', 'fileRemoved', (path) => {
       if (this.onFileRemoved) this.onFileRemoved(path)
     })
@@ -293,7 +312,7 @@ export const CompilerApiMixin = (Base) => class extends Base {
     })
     this.call('compilerloader', 'getJsonBinData')
 
-    this.data.eventHandlers.onCompilationFinished = async (success, data, source, input, version) => {
+    this.data.eventHandlers.onCompilationFinished = async (success: boolean, data: CompilationResult, source: SourceWithTarget, input: string, version: string) => {
       this.compileErrors = data
       if (success) {
         // forwarding the event to the appManager infra
@@ -308,6 +327,8 @@ export const CompilerApiMixin = (Base) => class extends Base {
           })
         } else this.statusChanged({ key: 'succeed', title: 'Compilation successful', type: 'success' })
       } else {
+        this.emit('compilationFailed', source.target, source, 'soljson', data, input, version)
+        this.compileTabLogic.compiler.state.lastCompilationResult = { data, source }
         const count = (data.errors ? data.errors.filter(error => error.severity === 'error').length : 0 + (data.error ? 1 : 0))
         this.statusChanged({ key: count, title: `Compilation failed with ${count} error${count > 1 ? 's' : ''}`, type: 'error' })
       }
@@ -342,6 +363,18 @@ export const CompilerApiMixin = (Base) => class extends Base {
     }
     this.compiler.event.register('compilationFinished', this.data.eventHandlers.onCompilationFinished)
 
+    this.on('foundry', 'compilationFinished', (target, sources, lang, output, version) => {
+      const contract = output.contracts[target][Object.keys(output.contracts[target])[0]]
+      sources.target = target
+      this.data.eventHandlers.onCompilationFinished(true, output, sources, JSON.stringify(contract.metadata), version)
+    })
+
+    this.on('hardhat', 'compilationFinished', (target, sources, lang, output, version) => {
+      const contract = output.contracts[target][Object.keys(output.contracts[target])[0]]
+      sources.target = target
+      this.data.eventHandlers.onCompilationFinished(true, output, sources, JSON.stringify(contract.metadata), version)
+    })
+
     this.data.eventHandlers.onThemeChanged = (theme) => {
       const invert = theme.quality === 'dark' ? 1 : 0
       const img = document.getElementById('swarmLogo')
@@ -359,7 +392,10 @@ export const CompilerApiMixin = (Base) => class extends Base {
         if (this.currentFile && (this.currentFile.endsWith('.sol') || this.currentFile.endsWith('.yul'))) {
           if (await this.getAppParameter('hardhat-compilation')) this.compileTabLogic.runCompiler('hardhat')
           else if (await this.getAppParameter('truffle-compilation')) this.compileTabLogic.runCompiler('truffle')
-          else this.compileTabLogic.runCompiler(undefined)
+          else if (await this.getAppParameter('foundry-compilation')) this.compileTabLogic.runCompiler('foundry')
+          else this.compileTabLogic.runCompiler('remix').catch((error) => {
+            this.call('notification', 'toast', error.message)
+          })
         } else if (this.currentFile && this.currentFile.endsWith('.circom')) {
           await this.call('circuit-compiler', 'compile', this.currentFile)
         } else if (this.currentFile && this.currentFile.endsWith('.vy')) {
@@ -381,7 +417,8 @@ export const CompilerApiMixin = (Base) => class extends Base {
       }
       const contractMap = {}
       const contractsDetails = {}
-      this.compiler.visitContracts((contract) => {
+
+      execution.txHelper.visitContracts(data.contracts, (contract) => {
         contractMap[contract.name] = contract
         contractsDetails[contract.name] = parseContracts(
           contract.name,

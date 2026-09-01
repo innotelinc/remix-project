@@ -5,13 +5,11 @@ import { PluginClient } from '@remixproject/plugin'
 import { Contract, compileContract } from './compiler'
 import { ExampleContract } from '../components/VyperResult'
 import EventEmitter from 'events'
-import { Plugin } from "@remixproject/engine";
 import { CustomRemixApi } from '@remix-api'
-
-export type VyperComplierAddress = 'https://vyper2.remixproject.org/' | 'http://localhost:8000/'
+import { endpointUrls } from '@remix-endpoints-helper'
 export class RemixClient extends PluginClient<any, CustomRemixApi> {
   private client = createClient<Api, Readonly<RemixApi>>(this)
-  compilerUrl: VyperComplierAddress = 'https://vyper2.remixproject.org/'
+  compilerUrl: string = endpointUrls.vyper2
   compilerOutput: any
   eventEmitter = new EventEmitter()
 
@@ -68,11 +66,15 @@ export class RemixClient extends PluginClient<any, CustomRemixApi> {
     }
     try {
       // TODO: remove! no formatting required since already handled on server
-      const formattedMessage = `
-        ${message}
-        can you explain why this error occurred and how to fix it?
-      `
-      await this.client.call('solcoder' as any, 'error_explaining', message)
+      const file = await this.client.call('fileManager', 'getCurrentFile')
+      const content = await this.client.call('fileManager', 'readFile', file)
+      const messageAI = `Vyper code: ${content}\n error message: ${message}\n explain why the error occurred and how to fix it.`
+
+      await this.client.plugin.call('popupPanel', 'showPopupPanel', true)
+      await this.client.plugin.call('menuicons', 'select', 'remixaiassistant')
+      setTimeout(async () => {
+        await (this.client.plugin as any).call('remixAI', 'chatPipe', 'error_explaining', messageAI, undefined, undefined, { source: 'vyper', presetId: 'error-explain' })
+      }, 500)
     } catch (err) {
       console.error('unable to askGpt')
       console.error(err)
@@ -83,22 +85,22 @@ export class RemixClient extends PluginClient<any, CustomRemixApi> {
 
     try {
       // @ts-ignore
-      this.call('notification', 'toast', 'cloning Snekmate Vyper repository...')
+      this.call('notification', 'toast', 'cloning Vyper repository...')
       await this.call(
         'dgitApi',
         'clone',
         { url: 'https://github.com/vyperlang/vyper', token: null, branch: 'master', singleBranch: false, workspaceName: 'vyper' },
       )
 
-      // await this.call(
-      //   'dgitApi',
-      //   'checkout',
-      //   {
-      //     ref:'v0.0.5',
-      //     force: true,
-      //     refresh: true,
-      //   }
-      // )
+      await this.call(
+        'dgitApi',
+        'checkout',
+        {
+          ref:'v0.4.0',
+          force: true,
+          refresh: true,
+        }
+      )
 
       this.call(
         // @ts-ignore

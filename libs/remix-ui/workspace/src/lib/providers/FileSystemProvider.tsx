@@ -6,6 +6,7 @@ import {Toaster} from '@remix-ui/toaster' // eslint-disable-line
 import { FileSystemContext } from '../contexts'
 import { browserReducer, browserInitialState } from '../reducers/workspace'
 import { branch } from '@remix-ui/git'
+import { CloudProvider } from '../cloud/cloud-context'
 import {
   initWorkspace,
   fetchDirectory,
@@ -25,6 +26,7 @@ import {
   copyShareURL,
   copyFolder,
   runScript,
+  signTypedData,
   emitContextMenuEvent,
   handleClickFile,
   handleExpandPath,
@@ -70,7 +72,7 @@ export const FileSystemProvider = (props: WorkspaceProps) => {
   const [modals, setModals] = useState<Modal[]>([])
   const [focusToaster, setFocusToaster] = useState<string>('')
   const [toasters, setToasters] = useState<string[]>([])
-
+  const [theme, setTheme] = useState<any>(null)
   const dispatchInitWorkspace = async () => {
     await initWorkspace(plugin)(fsDispatch)
   }
@@ -171,6 +173,10 @@ export const FileSystemProvider = (props: WorkspaceProps) => {
     await runScript(path)
   }
 
+  const dispatchSignTypedData = async (path: string) => {
+    await signTypedData(path)
+  }
+
   const dispatchEmitContextMenuEvent = async (cmd: customAction) => {
     await emitContextMenuEvent(cmd)
   }
@@ -247,6 +253,22 @@ export const FileSystemProvider = (props: WorkspaceProps) => {
     await removeRecentElectronFolder(path)
   }
 
+  const dispatchOpenElectronFolderInNewWindow = async (path: string) => {
+    try {
+      await plugin.call('fs', 'openFolder', path)
+    } catch (error) {
+      console.error('Error opening folder in new window:', error)
+    }
+  }
+
+  const dispatchRevealElectronFolderInExplorer = async (path: string | null) => {
+    try {
+      await plugin.call('fs', 'revealInExplorer', { path: [path]}, true)
+    } catch (error) {
+      console.error('Error revealing folder in explorer:', error)
+    }
+  }
+
   const dispatchUpdateGitSubmodules = async () => {
     await updateGitSubmodules()
   }
@@ -304,6 +326,15 @@ export const FileSystemProvider = (props: WorkspaceProps) => {
     plugin.expandPath = fs.browser.expandPath
   },[fs.browser.expandPath])
 
+  useEffect(() => {
+    plugin.on('theme', 'themeChanged', (theme: any) => {
+      setTheme(theme)
+    })
+    return () => {
+      plugin.off('theme', 'themeChanged')
+    }
+  }, [])
+
   const handleHideModal = () => {
     setFocusModal((modal) => {
       return { ...modal, hide: true, message: null }
@@ -358,6 +389,7 @@ export const FileSystemProvider = (props: WorkspaceProps) => {
     dispatchCopyShareURL,
     dispatchCopyFolder,
     dispatchRunScript,
+    dispatchSignTypedData,
     dispatchEmitContextMenuEvent,
     dispatchHandleClickFile,
     dispatchHandleExpandPath,
@@ -376,19 +408,24 @@ export const FileSystemProvider = (props: WorkspaceProps) => {
     dispatchOpenElectronFolder,
     dispatchGetElectronRecentFolders,
     dispatchRemoveRecentFolder,
-    dispatchUpdateGitSubmodules
+    dispatchOpenElectronFolderInNewWindow,
+    dispatchRevealElectronFolderInExplorer,
+    dispatchUpdateGitSubmodules,
+    theme
   }
   return (
-    <FileSystemContext.Provider value={value}>
-      {fs.initializingFS && (
-        <div className="text-center py-5">
-          <i className="fas fa-spinner fa-pulse fa-2x"></i>
-        </div>
-      )}
-      {!fs.initializingFS && <Workspace />}
-      <ModalDialog id="fileSystem" {...focusModal} handleHide={handleHideModal} />
-      <Toaster message={focusToaster} handleHide={handleToaster} />
-    </FileSystemContext.Provider>
+    <CloudProvider plugin={plugin}>
+      <FileSystemContext.Provider value={value}>
+        {fs.initializingFS && (
+          <div className="text-center py-5">
+            <i className="fas fa-spinner fa-pulse fa-2x"></i>
+          </div>
+        )}
+        {!fs.initializingFS && <Workspace />}
+        <ModalDialog id="fileSystem" {...focusModal} handleHide={handleHideModal} />
+        <Toaster message={focusToaster} handleHide={handleToaster} />
+      </FileSystemContext.Provider>
+    </CloudProvider>
   )
 }
 

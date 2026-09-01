@@ -7,6 +7,7 @@ import http from 'isomorphic-git/http/web'
 
 import { Octokit } from "octokit"
 import { ElectronBasePluginClient } from "@remixproject/plugin-electron"
+import { endpointUrls } from "@remix-endpoints-helper"
 const currentbranch = async (input: currentBranchInput, fsConfig: isoGitFSConfig) => {
 
   try {
@@ -199,8 +200,12 @@ const addIsomorphicGitProxyConfig = async (input: {
 
   const token = await plugin.call('config' as any, 'getAppParameter', 'settings/gist-access-token')
 
+  // Check if running in Electron (desktop app)
+  const isElectron = typeof process !== 'undefined' && process.versions && process.versions.electron
+
   let config: isoGitProxyConfig = {
-    corsProxy: 'https://corsproxy.remixproject.org/',
+    // Electron apps don't need CORS proxy since they're not subject to browser CORS restrictions
+    corsProxy: isElectron ? null : `${endpointUrls.corsProxy}`,
     http,
     onAuth: url => {
       url
@@ -211,8 +216,9 @@ const addIsomorphicGitProxyConfig = async (input: {
       return auth
     }
   }
-  if (input.url) {
 
+  // For non-Electron environments, handle localhost URLs
+  if (!isElectron && input.url) {
     const url = new URL(input.url)
     if (url.hostname.includes('localhost')) {
       config = {
@@ -221,8 +227,7 @@ const addIsomorphicGitProxyConfig = async (input: {
       }
     }
   }
-  if ((input.remote && input.remote.url)) {
-
+  if (!isElectron && (input.remote && input.remote.url)) {
     const url = new URL(input.remote.url)
     if (url.hostname.includes('localhost')) {
       config = {
@@ -232,10 +237,11 @@ const addIsomorphicGitProxyConfig = async (input: {
     }
   }
 
-  if (input.provider && input.provider === 'github') {
+  // Provider overrides (only for non-Electron)
+  if (!isElectron && input.provider && input.provider === 'github') {
     config = {
       ...config,
-      corsProxy: 'https://corsproxy.remixproject.org/',
+      corsProxy: `${endpointUrls.corsProxy}`,
     }
   }
 

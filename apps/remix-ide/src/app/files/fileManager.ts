@@ -13,6 +13,9 @@ import { commitChange } from '@remix-ui/git'
 /*
   attach to files event (removed renamed)
   trigger: currentFileChanged
+        // Handle any errors that occur during the mapping process
+      }
+    }
 */
 
 const profile = {
@@ -22,11 +25,11 @@ const profile = {
   icon: 'assets/img/fileManager.webp',
   permission: true,
   version: packageJson.version,
-  methods: ['closeAllFiles', 'closeFile', 'file', 'exists', 'open', 'writeFile', 'writeMultipleFiles', 'writeFileNoRewrite',
+  methods: ['closeAllFiles', 'closeFile', 'file', 'exists', 'open', 'openFile', 'writeFile', 'writeMultipleFiles', 'writeFileNoRewrite',
     'readFile', 'copyFile', 'copyDir', 'rename', 'mkdir', 'readdir', 'dirList', 'fileList', 'remove', 'getCurrentFile', 'getFile',
     'getFolder', 'setFile', 'switchFile', 'refresh', 'getProviderOf', 'getProviderByName', 'getPathFromUrl', 'getUrlFromPath',
     'saveCurrentFile', 'setBatchFiles', 'isGitRepo', 'isFile', 'isDirectory', 'hasGitSubmodule', 'copyFolderToJson', 'diff',
-    'hasGitSubmodules'
+    'hasGitSubmodules', 'getOpenedFiles', 'download'
   ],
   kind: 'file-system'
 }
@@ -40,7 +43,7 @@ const errorMsg = {
 const createError = (err) => {
   return new Error(`${errorMsg[err.code]} ${err.message || ''}`)
 }
-class FileManager extends Plugin {
+export default class FileManager extends Plugin {
   mode: string
   openedFiles: any
   editor: any
@@ -271,7 +274,7 @@ class FileManager extends Plugin {
       } else {
         const ret = await this.setFileContent(path, data)
         this.emit('fileAdded', path)
-        return { newContent: ret, newpath: path }
+        return { newContent: ret, newPath: path }
       }
     } catch (e) {
       throw new Error(e)
@@ -351,7 +354,7 @@ class FileManager extends Plugin {
 
   async inDepthCopy(src: string, dest: string, customName?: string) {
     const content = await this.readdir(src)
-    let copiedFolderPath = !customName ? dest + '/' + `Copy_${helper.extractNameFromKey(src)}` : dest + '/' + helper.extractNameFromKey(src)
+    let copiedFolderPath = !customName ? dest + '/' + `Copy_${helper.extractNameFromKey(src)}` : dest + '/' + customName
     copiedFolderPath = await helper.createNonClashingDirNameAsync(copiedFolderPath, this)
 
     await this.mkdir(copiedFolderPath)
@@ -406,10 +409,11 @@ class FileManager extends Plugin {
     }
   }
 
-  async zipDir(dirPath, zip) {
+  async zipDir(dirPath, zip, ignoreDirs = []) {
+    if (ignoreDirs.includes(dirPath)) return
     const filesAndFolders = await this.readdir(dirPath)
     for (let path in filesAndFolders) {
-      if (filesAndFolders[path].isDirectory) await this.zipDir(path, zip)
+      if (filesAndFolders[path].isDirectory) await this.zipDir(path, zip, ignoreDirs)
       else {
         path = this.normalize(path)
         const content: any = await this.readFile(path)
@@ -418,18 +422,18 @@ class FileManager extends Plugin {
     }
   }
 
-  async download(path) {
+  async download(path, asZip = true, ignoreDirs = []) {
     try {
       const downloadFileName = helper.extractNameFromKey(path)
       if (await this.isDirectory(path)) {
         const zip = new JSZip()
-        await this.zipDir(path, zip)
+        await this.zipDir(path, zip, ignoreDirs)
         const content = await zip.generateAsync({ type: 'blob' })
-        saveAs(content, `${downloadFileName}.zip`)
+        return asZip ? saveAs(content, `${downloadFileName}.zip`) : content
       } else {
         path = this.normalize(path)
         const content: any = await this.readFile(path)
-        saveAs(new Blob([content]), downloadFileName)
+        return asZip ? saveAs(new Blob([content]), downloadFileName) : new Blob([content])
       }
     } catch (e) {
       throw new Error(e)
@@ -608,11 +612,16 @@ class FileManager extends Plugin {
     const provider = this.fileProviderOf(path)
 
     if (!provider) throw createError({ code: 'ENOENT', message: `${path} not available` })
+    // binary reads must never be served from the editor's (text-only) buffer
+    const wantsBinary = options && options.encoding === null
     // TODO: change provider to Promise
     return new Promise((resolve, reject) => {
-      if (this.currentFile() === path) {
+      if (!wantsBinary && this.currentFile() === path) {
         const editorContent = this.editor.currentContent()
-        if (editorContent) resolve(editorContent)
+        if (editorContent) {
+          resolve(editorContent)
+          return
+        }
       }
       provider.get(path, (err, content) => {
         if (err) reject(err)
@@ -625,7 +634,7 @@ class FileManager extends Plugin {
     if (this.currentRequest) {
       const canCall = await this.askUserPermission(`writeFile`, `modifying ${path} ...`)
       const required = this.appManager.isRequired(this.currentRequest.from)
-      if (canCall && !required) {
+      if (canCall && !required && !options?.silent) {
         // inform the user about modification after permission is granted and even if permission was saved before
         this.call('notification', 'toast', fileChangedToastMsg(this.currentRequest.from, path))
       }
@@ -655,11 +664,11 @@ class FileManager extends Plugin {
    * @param {string} file url we are trying to resolve
    * @returns {{ string, provider }} file path resolved and its provider.
    */
-  getPathFromUrl(file) {
+  getPathFromUrl(file: string) {
     const provider = this.fileProviderOf(file)
     if (!provider) throw new Error(`no provider for ${file}`)
     return {
-      file: provider.getPathFromUrl(file) || file, // in case an external URL is given as input, we resolve it to the right internal path
+      file: provider.getPathFromUrl(file) || file,
       provider
     }
   }
@@ -767,6 +776,8 @@ class FileManager extends Plugin {
       }
       if (provider.isReadOnly(file)) {
         await this.editor.openReadOnly(file, content)
+      } else if (file?.endsWith('.wasm')) {
+        await this.editor.displayEmptyReadOnlySession(file, 'This file cannot be previewed in the editor.')
       } else {
         await this.editor.open(file, content)
       }
@@ -851,9 +862,11 @@ class FileManager extends Plugin {
   async saveCurrentFile() {
     const currentFile = this._deps.config.get('currentFile')
     if (currentFile && this.editor.current()) {
+      if (currentFile.endsWith('.wasm')) return
+      const provider = this.fileProviderOf(currentFile)
+      if (provider?.isReadOnly(currentFile)) return
       const input = this.editor.get(currentFile)
       if ((input !== null) && (input !== undefined)) {
-        const provider = this.fileProviderOf(currentFile)
         if (provider) {
           // use old content as default if save operation fails.
           provider.get(currentFile, (error, oldContent) => {

@@ -1,4 +1,5 @@
 
+import { Registry } from '@remix-project/remix-lib';
 import { monacoTypes } from '@remix-ui/editor';
 import { commitChange } from '@remix-ui/git';
 export interface Action {
@@ -20,7 +21,12 @@ export const reducerActions = (models = initialState, action: Action) => {
     const value = action.payload.value
     const language = action.payload.language
     const readOnly = action.payload.readOnly
-    if (models[uri]) return models // already existing
+    if (models[uri]) {
+      if (models[uri].readOnly !== readOnly) {
+        return { ...models, [uri]: { ...models[uri], readOnly } }
+      }
+      return models
+    }
     models[uri] = { language, uri, readOnly }
     let model
 
@@ -38,7 +44,7 @@ export const reducerActions = (models = initialState, action: Action) => {
     const model = models[uri]?.model
     if (model) model.dispose()
     delete models[uri]
-    return models
+    return { ...models }
   }
   case 'ADD_DIFF': {
     if (!editors) return models
@@ -115,6 +121,16 @@ export const reducerActions = (models = initialState, action: Action) => {
 }
 
 export const reducerListener = (plugin, dispatch, monaco, editors: any[], events) => {
+  const config = Registry.getInstance().get('config').api
+  const wordWrap = config.get('settings/text-wrap')
+
+  dispatch({
+    type: 'SET_WORDWRAP',
+    payload: { wrap: wordWrap },
+    monaco,
+    editors
+  })
+
   plugin.on('editor', 'addModel', (value, language, uri, readOnly) => {
     dispatch({
       type: 'ADD_MODEL',
@@ -192,7 +208,7 @@ export const reducerListener = (plugin, dispatch, monaco, editors: any[], events
     })
   })
 
-  plugin.on('editor', 'setWordWrap', (wrap) => {
+  plugin.on('settings', 'textWrapChoiceUpdated', (wrap) => {
     dispatch({
       type: 'SET_WORDWRAP',
       payload: { wrap },

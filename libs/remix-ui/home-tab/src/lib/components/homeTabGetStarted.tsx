@@ -5,17 +5,13 @@ import { TEMPLATE_NAMES, TEMPLATE_METADATA } from '@remix-ui/workspace'
 import { ThemeContext } from '../themeContext'
 import WorkspaceTemplate from './workspaceTemplate'
 import 'react-multi-carousel/lib/styles.css'
-import { appPlatformTypes, platformContext } from '@remix-ui/app'
+import { AppContext, appPlatformTypes, platformContext } from '@remix-ui/app'
+import { HomeTabEvent, MatomoEvent } from '@remix-api'
+import { TrackingContext } from '@remix-ide/tracking'
 import { Plugin } from "@remixproject/engine";
 import { CustomRemixApi } from '@remix-api'
 import { CustomTooltip } from '@remix-ui/helper'
 
-declare global {
-  interface Window {
-    _paq: any
-  }
-}
-const _paq = (window._paq = window._paq || []) //eslint-disable-line
 interface HomeTabGetStartedProps {
   plugin: any
 }
@@ -25,49 +21,49 @@ type WorkspaceTemplate = {
   workspaceTitle: string
   description: string
   projectLogo: string
-  templateName?: string
+  templateName: string
 }
 
 const workspaceTemplates: WorkspaceTemplate[] = [
   {
     gsID: 'sUTLogo',
-    workspaceTitle: 'Start Coding',
-    description: 'Start coding using the default template.',
+    workspaceTitle: 'home.templateStartCodingTitle',
+    description: 'home.templateStartCodingDesc',
     projectLogo: 'assets/img/remixverticaltextLogo.png',
     templateName: 'remixDefault',
   },
   {
     gsID: 'sUTLogo',
-    workspaceTitle: 'ZK Semaphore',
-    description: 'Create a new ZK Project with Circom using this template.',
+    workspaceTitle: 'home.templateZKSemaphoreTitle',
+    description: 'home.templateZKSemaphoreDesc',
     projectLogo: 'assets/img/circom.webp',
     templateName: 'semaphore',
   },
   {
     gsID: 'sUTLogo',
-    workspaceTitle: 'ERC20',
-    description: 'Create a new ERC20 token using this template.',
+    workspaceTitle: 'home.templateERC20Title',
+    description: 'home.templateERC20Desc',
     projectLogo: 'assets/img/oxprojectLogo.png',
     templateName: 'ozerc20',
   },
   {
     gsID: 'sUTLogo',
-    workspaceTitle: 'Uniswap V4 Hooks',
-    description: 'Create a new workspace based on this template.',
+    workspaceTitle: 'home.templateUniswapV4Title',
+    description: 'home.templateUniswapV4Desc',
     projectLogo: 'assets/img/gnosissafeLogo.png',
     templateName: 'uniswapV4Template',
   },
   {
     gsID: 'sUTLogo',
-    workspaceTitle: 'NFT / ERC721',
-    description: 'Create a new ERC721 token using this template.',
+    workspaceTitle: 'home.templateNFTTitle',
+    description: 'home.templateNFTDesc',
     projectLogo: 'assets/img/openzeppelinLogo.png',
     templateName: 'ozerc721',
   },
   {
     gsID: 'sUTLogo',
-    workspaceTitle: 'MultiSig',
-    description: 'Create a new MultiSig wallet using this template.',
+    workspaceTitle: 'home.templateMultiSigTitle',
+    description: 'home.templateMultiSigDesc',
     projectLogo: 'assets/img/gnosissafeLogo.png',
     templateName: 'gnosisSafeMultisig',
   }
@@ -76,6 +72,13 @@ const workspaceTemplates: WorkspaceTemplate[] = [
 function HomeTabGetStarted({ plugin }: HomeTabGetStartedProps) {
   const platform = useContext(platformContext)
   const themeFilter = useContext(ThemeContext)
+  const appContext = useContext(AppContext)
+  const { trackMatomoEvent: baseTrackEvent } = useContext(TrackingContext)
+
+  // Component-specific tracker with default type, but allows overrides
+  const trackMatomoEvent = <T extends MatomoEvent = HomeTabEvent>(event: T) => {
+    baseTrackEvent?.<T>(event)
+  }
   const intl = useIntl()
   const carouselRef = useRef<any>({})
   const carouselRefDiv = useRef(null)
@@ -147,11 +150,16 @@ function HomeTabGetStarted({ plugin }: HomeTabGetStartedProps) {
       await plugin.call('filePanel', 'setWorkspace', templateDisplayName)
       plugin.verticalIcons.select('filePanel')
     }
-    _paq.push(['trackEvent', 'hometab', 'homeGetStarted', templateName])
+    trackMatomoEvent({
+      category: 'hometab',
+      action: 'homeGetStarted',
+      name: templateName,
+      isClick: true
+    })
   }
 
   return (
-    <div className="pl-2" id="hTGetStartedSection">
+    <div className="ps-2" id="hTGetStartedSection">
       <label className="pt-3" style={{ fontSize: '1.2rem' }}>
         <FormattedMessage id="home.projectTemplates" />
       </label>
@@ -160,21 +168,28 @@ function HomeTabGetStarted({ plugin }: HomeTabGetStartedProps) {
           <div className="pt-3">
             <div className="d-flex flex-row align-items-center flex-wrap">
               {workspaceTemplates.map((template, index) => (
-                <CustomTooltip tooltipText={template.description} tooltipId={template.gsID} tooltipClasses="text-nowrap" tooltipTextClasses="border bg-light text-dark p-1 pr-3" placement="top-start" key={`${template.gsID}-${template.workspaceTitle}-${index}`}>
+                <CustomTooltip
+                  tooltipText={intl.formatMessage({ id: template.description })}
+                  tooltipId={template.gsID}
+                  tooltipClasses="text-nowrap"
+                  tooltipTextClasses="border bg-light text-dark p-1 pe-3"
+                  placement="top-start"
+                  key={`${template.gsID}-${template.workspaceTitle}-${index}`}
+                >
                   <button
                     key={index}
-                    className={index === 0 ? 'btn btn-primary border p-2 text-nowrap mr-3 mb-2' : index === workspaceTemplates.length - 1 ? 'btn border p-2 text-nowrap mr-2 mb-3' : 'btn border p-2 text-nowrap mr-3 mb-3'}
+                    className={index === 0 ?
+                      'btn btn-primary border p-2 text-nowrap me-3 mb-3' :
+                      index === workspaceTemplates.length - 1 ?
+                        'btn border p-2 text-nowrap me-2 mb-3' :
+                        'btn border p-2 text-nowrap me-3 mb-3'
+                    }
                     onClick={async (e) => {
-                      if (template.gsID === 'browseTemplate') {
-                        await plugin.call('manager', 'activatePlugin', 'templateSelection')
-                        plugin.call('tabs' as any, 'focus', 'templateSelection')
-                      } else {
-                        createWorkspace(template.templateName)
-                      }
+                      createWorkspace(template.templateName)
                     }}
                     data-id={`homeTabGetStarted${template.templateName}`}
                   >
-                    {template.workspaceTitle}
+                    <FormattedMessage id={template.workspaceTitle} />
                   </button>
                 </CustomTooltip>
               ))}

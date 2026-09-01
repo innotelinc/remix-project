@@ -1,88 +1,134 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef, useState, useCallback, useContext } from "react";
 import { gitActionsContext, pluginActionsContext } from "../../state/context";
 import { gitPluginContext } from "../gitui";
 import axios from "axios";
 import { CopyToClipboard } from "@remix-ui/clipboard";
-import { Card } from "react-bootstrap";
-import { sendToMatomo } from "../../lib/pluginActions";
-import { gitMatomoEventTypes } from "../../types";
+import { endpointUrls } from "@remix-endpoints-helper";
+import isElectron from "is-electron";
+import { startGitHubLogin, getDeviceCodeFromGitHub, connectWithDeviceCode, disconnectFromGitHub } from "../../lib/gitLoginActions";
+import { TrackingContext } from '@remix-ide/tracking';
+import { GitEvent, MatomoEvent } from '@remix-api';
 
-export const GetDeviceCode = () => {
+export const ConnectToGitHub = () => {
   const context = React.useContext(gitPluginContext)
   const actions = React.useContext(gitActionsContext)
   const pluginActions = React.useContext(pluginActionsContext)
+  const { trackMatomoEvent: baseTrackEvent } = useContext(TrackingContext)
   const [gitHubResponse, setGitHubResponse] = React.useState<any>(null)
   const [authorized, setAuthorized] = React.useState<boolean>(false)
+  const [popupError, setPopupError] = useState(false)
+  const [desktopIsLoading, setDesktopIsLoading] = React.useState<boolean>(false)
 
-  const getDeviceCodeFromGitHub = async () => {
-    await sendToMatomo(gitMatomoEventTypes.GETGITHUBDEVICECODE)
-    setAuthorized(false)
-    // Send a POST request
-    const response = await axios({
-      method: 'post',
-      url: 'https://github.remixproject.org/login/device/code',
-      data: {
-        client_id: '2795b4e41e7197d6ea11',
-        scope: 'repo gist user:email read:user'
-      },
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-    });
-
-    // convert response to json
-    const githubrespone = await response.data;
-
-    setGitHubResponse(githubrespone)
+  // Component-specific tracker with default GitEvent type
+  const trackMatomoEvent = <T extends MatomoEvent = GitEvent>(event: T) => {
+    baseTrackEvent?.<T>(event)
   }
 
-  const connectApp = async () => {
-    await sendToMatomo(gitMatomoEventTypes.CONNECTTOGITHUB)
-    // poll https://github.com/login/oauth/access_token
-    const accestokenresponse = await axios({
-      method: 'post',
-      url: 'https://github.remixproject.org/login/oauth/access_token',
-      data: {
-        client_id: '2795b4e41e7197d6ea11',
-        device_code: gitHubResponse.device_code,
-        grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
-      },
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-    });
+  const popupRef = useRef<Window | null>(null)
 
-    // convert response to json
-    const response = await accestokenresponse.data;
+  const openPopupLogin = useCallback(async () => {
+    trackMatomoEvent({
+      category: 'git',
+      action: 'CONNECT_TO_GITHUB',
+      name: 'BUTTON_CLICK',
+      isClick: true
+    })
+    try {
+      if (isElectron()) {
+        setDesktopIsLoading(true)
+      }
+      await startGitHubLogin()
+      if (!isElectron()) {
+        setAuthorized(true)
+      }
+    } catch (error) {
+      console.error('GitHub login failed:', error)
+      if (isElectron()) {
+        setDesktopIsLoading(false)
+      } else {
+        setPopupError(true)
+        // Fallback to device code flow
+        await handleGetDeviceCode()
+      }
+    }
+  }, [])
 
-    if (response.access_token) {
-      setAuthorized(true)
-      await sendToMatomo(gitMatomoEventTypes.CONNECTTOGITHUBSUCCESS)
-      await pluginActions.saveToken(response.access_token)
-      await actions.loadGitHubUserFromToken()
-    } else {
-      await sendToMatomo(gitMatomoEventTypes.CONNECTTOGITHUBFAIL)
+  const handleGetDeviceCode = async () => {
+    setDesktopIsLoading(false)
+    setPopupError(false)
+    setAuthorized(false)
+
+    try {
+      const githubResponse = await getDeviceCodeFromGitHub()
+      setGitHubResponse(githubResponse)
+    } catch (error) {
+      console.error('Failed to get device code:', error)
+      trackMatomoEvent({
+        category: 'git',
+        action: 'CONNECT_TO_GITHUB',
+        name: 'DEVICE_CODE_FAIL',
+        isClick: true
+      })
     }
   }
 
-  const disconnect = async () => {
-    await sendToMatomo(gitMatomoEventTypes.DISCONNECTFROMGITHUB)
-    setAuthorized(false)
-    setGitHubResponse(null)
-    await pluginActions.saveToken(null)
-    await actions.loadGitHubUserFromToken()
+  const connectApp = async () => {
+    try {
+      await connectWithDeviceCode(gitHubResponse.device_code)
+      setAuthorized(true)
+    } catch (error) {
+      console.error('Failed to connect with device code:', error)
+      trackMatomoEvent({
+        category: 'git',
+        action: 'CONNECT_TO_GITHUB',
+        name: 'DEVICE_CODE_FAIL',
+        isClick: true
+      })
+    }
+  }
+
+  useEffect(() => {
+    if (context.gitHubUser && context.gitHubUser.isConnected) {
+      setDesktopIsLoading(false)
+    }
+  },[context.gitHubUser])
+
+  const handleDisconnect = async () => {
+    try {
+      await disconnectFromGitHub()
+      setAuthorized(false)
+      setGitHubResponse(null)
+    } catch (error) {
+      console.error('Failed to disconnect from GitHub:', error)
+    }
   }
 
   return (
     <>
       {(context.gitHubUser && context.gitHubUser.isConnected) ? null : <>
         <label className="text-uppercase">Connect to GitHub</label>
-        <button className='btn btn-secondary mt-1 w-100' onClick={async () => {
-          await getDeviceCodeFromGitHub()
-        }}><i className="fab fa-github mr-1"></i>Login with GitHub</button></>
-      }
+        <button className='btn btn-secondary mt-1 w-100' onClick={openPopupLogin}>
+          <i className="fab fa-github me-1"></i>connect with GitHub
+        </button>
+        {popupError && !gitHubResponse && !authorized && (
+          <div className="alert alert-warning mt-2" role="alert">
+            GitHub login failed. You can continue using another method.
+            <button className='btn btn-outline-primary btn-sm mt-2 w-100' onClick={handleGetDeviceCode}>
+              Use another method
+            </button>
+          </div>
+        )}
+        {desktopIsLoading && <div className="text-center mt-2">
+          <i className="fas fa-spinner fa-spin fa-2x mt-1"></i>
+          <div className="alert alert-warning mt-2" role="alert">
+            In case of issues, you can try another method.
+            <button className='btn btn-outline-primary btn-sm mt-2 w-100' onClick={handleGetDeviceCode}>
+              Use another method
+            </button>
+          </div>
+        </div>
+        }
+      </>}
       {gitHubResponse && !authorized &&
         <div className="pt-2">
 
@@ -90,7 +136,12 @@ export const GetDeviceCode = () => {
           <div className="input-group text-secondary mb-0 h6">
             <input disabled type="text" className="form-control" value={gitHubResponse.user_code} />
             <div className="input-group-append">
-              <CopyToClipboard callback={() => sendToMatomo(gitMatomoEventTypes.COPYGITHUBDEVICECODE)} content={gitHubResponse.user_code} data-id='copyToClipboardCopyIcon' className='far fa-copy ml-1 p-2 mt-1' direction={"top"} />
+              <CopyToClipboard callback={() => trackMatomoEvent({
+                category: 'git',
+                action: 'GITHUB_DEVICE_CODE_FLOW',
+                name: 'COPY_CODE',
+                isClick: true
+              })} content={gitHubResponse.user_code} data-id='copyToClipboardCopyIcon' className='far fa-copy ms-1 p-2 mt-1' direction={"top"} />
             </div>
           </div>
           <br></br>
@@ -107,7 +158,7 @@ export const GetDeviceCode = () => {
         (context.gitHubUser && context.gitHubUser.isConnected) ?
           <div className="pt-2">
             <button data-id='disconnect-github' className='btn btn-primary mt-1 w-100' onClick={async () => {
-              disconnect()
+              handleDisconnect()
             }}>Disconnect</button>
           </div> : null
       }

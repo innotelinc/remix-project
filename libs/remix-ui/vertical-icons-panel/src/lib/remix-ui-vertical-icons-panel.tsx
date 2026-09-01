@@ -1,32 +1,43 @@
 import React, { Fragment, useContext, useEffect, useReducer, useRef, useState } from 'react'
 import { Plugin } from '@remixproject/engine'
+//@ts-ignore
 import './remix-ui-vertical-icons-panel.css'
 import IconList from './components/IconList'
 import Home from './components/Home'
+import { HelpMenu } from './components/HelpMenu'
 import { verticalScrollReducer } from './reducers/verticalScrollReducer'
 import { Chevron } from './components/Chevron'
 import { IconRecord } from './types'
-import { onLineContext } from '@remix-ui/app'
+import { AppContext, onLineContext } from '@remix-ui/app'
 import { CustomTooltip } from '@remix-ui/helper'
 import { Registry } from '@remix-project/remix-lib'
+import { desktopConnectionType } from '@remix-api'
+import { FormattedMessage } from 'react-intl'
 
 export interface RemixUiVerticalIconsPanelProps {
   verticalIconsPlugin: Plugin
   icons: IconRecord[]
+  rightPanelHidden?: boolean
+  leftPanelHidden?: boolean
 }
 
 const initialState = {
   scrollHeight: 0,
   clientHeight: 0,
-  scrollState: false
+  scrollState: false,
 }
 
-const RemixUiVerticalIconsPanel = ({ verticalIconsPlugin, icons }: RemixUiVerticalIconsPanelProps) => {
+// pinned at the very bottom of the rail, above the Help & Resources button
+const bottomPinned = ['planManager', 'helpPlugin']
+
+const RemixUiVerticalIconsPanel = ({ verticalIconsPlugin, icons, rightPanelHidden, leftPanelHidden }: RemixUiVerticalIconsPanelProps) => {
   const scrollableRef = useRef<any>()
   const iconPanelRef = useRef<any>()
   const [activateScroll, dispatchScrollAction] = useReducer(verticalScrollReducer, initialState)
   const [theme, setTheme] = useState<string>('dark')
+  const [helpMenuOpen, setHelpMenuOpen] = useState<boolean>(false)
   const online = useContext(onLineContext)
+  const appContext = useContext(AppContext)
 
   const evaluateScrollability = () => {
     dispatchScrollAction({
@@ -34,8 +45,8 @@ const RemixUiVerticalIconsPanel = ({ verticalIconsPlugin, icons }: RemixUiVertic
       payload: {
         scrollHeight: scrollableRef.current?.scrollHeight,
         clientHeight: scrollableRef.current?.clientHeight,
-        scrollState: false
-      }
+        scrollState: false,
+      },
     })
   }
 
@@ -67,75 +78,77 @@ const RemixUiVerticalIconsPanel = ({ verticalIconsPlugin, icons }: RemixUiVertic
     verticalIconsPlugin.call('manager', 'deactivatePlugin', name)
   }
 
+  if (appContext.appState.connectedToDesktop !== desktopConnectionType.disabled) {
+    return (
+      <>
+        <div id="iconsP" className="h-100">
+          <div className="remixui_icons d-flex flex-column remixui_icons_height" ref={iconPanelRef}>
+            <Home disableClick={true} verticalIconPlugin={verticalIconsPlugin} />
+          </div>
+        </div>
+      </>
+    )
+  }
+
   return (
     <div id="iconsP" className="h-100">
       <div className="remixui_icons d-flex flex-column remixui_icons_height" ref={iconPanelRef}>
-        <Home verticalIconPlugin={verticalIconsPlugin} />
-        <div
-          className={
-            scrollableRef.current && scrollableRef.current.scrollHeight > scrollableRef.current.clientHeight
-              ? 'remixui_default-icons-container remixui_requiredSection'
-              : activateScroll && activateScroll.scrollState
-                ? 'remixui_default-icons-container remixui_requiredSection'
-                : 'remixui_requiredSection'
-          }
-        >
-          <IconList
-            theme={theme}
-            icons={icons.filter((p) => p.isRequired && p.profile.name !== 'pluginManager')}
-            verticalIconsPlugin={verticalIconsPlugin}
-            itemContextAction={itemContextAction}
-          />
-          {scrollableRef.current && scrollableRef.current.scrollHeight > scrollableRef.current.clientHeight ? (
-            <Chevron direction="up" divElementRef={scrollableRef} cssRule={'fa fa-chevron-up remixui_icon-chevron my-0'} />
-          ) : null}
+        <div className={scrollableRef.current && scrollableRef.current.scrollHeight > scrollableRef.current.clientHeight ? 'remixui_default-icons-container remixui_requiredSection' : activateScroll && activateScroll.scrollState ? 'remixui_default-icons-container remixui_requiredSection' : 'remixui_requiredSection'}>
+          <IconList theme={theme} icons={icons.filter((p) => p.profile.name === 'remixaiassistant')} verticalIconsPlugin={verticalIconsPlugin} itemContextAction={itemContextAction} showLabels rightPanelHidden={rightPanelHidden} leftPanelHidden={leftPanelHidden} />
+          <div className="remixui_ai-divider"></div>
+          <IconList theme={theme} icons={icons.filter((p) => p.isRequired && p.profile.name !== 'pluginManager' && p.profile.name !== 'remixaiassistant')} verticalIconsPlugin={verticalIconsPlugin} itemContextAction={itemContextAction} showLabels leftPanelHidden={leftPanelHidden} />
+          {scrollableRef.current && scrollableRef.current.scrollHeight > scrollableRef.current.clientHeight ? <Chevron direction="up" divElementRef={scrollableRef} cssRule={'fa fa-chevron-up remixui_icon-chevron my-0'} /> : null}
         </div>
-        <div
-          id="remixuiScrollable"
-          className={
-            scrollableRef.current && scrollableRef.current.scrollHeight > scrollableRef.current.clientHeight
-              ? 'remixui_default-icons-container remixui_scrollable-container remixui_scrollbar remixui_hide-scroll'
-              : activateScroll && activateScroll.scrollState
-                ? 'remixui_default-icons-container remixui_scrollable-container remixui_scrollbar remixui_hide-scroll'
-                : 'remixui_scrollable-container remixui_scrollbar remixui_hide-scroll'
-          }
-          ref={scrollableRef}
-        >
+        <div id="remixuiScrollable" className={scrollableRef.current && scrollableRef.current.scrollHeight > scrollableRef.current.clientHeight ? 'remixui_default-icons-container remixui_scrollable-container remixui_scrollbar remixui_hide-scroll' : activateScroll && activateScroll.scrollState ? 'remixui_default-icons-container remixui_scrollable-container remixui_scrollbar remixui_hide-scroll' : 'remixui_scrollable-container remixui_scrollbar remixui_hide-scroll'} ref={scrollableRef}>
+          <IconList theme={theme} icons={icons.filter((p) => p.profile.name === 'pluginManager')} verticalIconsPlugin={verticalIconsPlugin} itemContextAction={itemContextAction} showLabels leftPanelHidden={leftPanelHidden} />
           <IconList
             theme={theme}
             icons={icons.filter((p) => {
-              return !p.isRequired && p.profile.name !== 'settings'
+              return !p.isRequired && !bottomPinned.includes(p.profile.name) && p.profile.name !== 'settings' && p.profile.name !== 'walkthrough' && p.profile.name !== 'pluginManager'
             })}
             verticalIconsPlugin={verticalIconsPlugin}
             itemContextAction={itemContextAction}
+            leftPanelHidden={leftPanelHidden}
           />
+          <IconList theme={theme} icons={icons.filter((p) => p.profile.name === 'settings' || p.profile.name === 'walkthrough')} verticalIconsPlugin={verticalIconsPlugin} itemContextAction={itemContextAction} leftPanelHidden={leftPanelHidden} />
         </div>
         <div className="remixui_default-icons-container border-0">
-          { scrollableRef.current && scrollableRef.current.scrollHeight > scrollableRef.current.clientHeight ? (
-            <Chevron divElementRef={scrollableRef} direction="down" cssRule={'fa fa-chevron-down remixui_icon-chevron my-0'} />
-          ) : null }
           <IconList
             theme={theme}
-            icons={icons.filter((p) => p.profile.name === 'settings' || p.profile.name === 'pluginManager')}
+            icons={icons
+              .filter((p) => bottomPinned.includes(p.profile.name))
+              .sort((a, b) => bottomPinned.indexOf(a.profile.name) - bottomPinned.indexOf(b.profile.name))}
             verticalIconsPlugin={verticalIconsPlugin}
             itemContextAction={itemContextAction}
+            leftPanelHidden={leftPanelHidden}
           />
-          { Registry.getInstance().get('platform').api.isDesktop() ? (
+        </div>
+        <div className="remixui_default-icons-container border-0 pb-3">
+          {scrollableRef.current && scrollableRef.current.scrollHeight > scrollableRef.current.clientHeight ? <Chevron divElementRef={scrollableRef} direction="down" cssRule={'fa fa-chevron-down remixui_icon-chevron my-0'} /> : null}
+          {Registry.getInstance().get('platform').api.isDesktop() ? (
             online ? (
-              <CustomTooltip
-                placement="top"
-                tooltipText={'You are online'}
-              >
+              <CustomTooltip placement="top" tooltipText={'You are online'}>
                 <i className="fa-solid fa-wifi text-success p-2"></i>
-              </CustomTooltip>)
-              :
-              (<CustomTooltip
-                placement="top"
-                tooltipText={'You are offline'}
-              >
+              </CustomTooltip>
+            ) : (
+              <CustomTooltip placement="top" tooltipText={'You are offline'}>
                 <i className="fa-solid fa-wifi-exclamation text-danger p-2"></i>
-              </CustomTooltip>)
-          ) : null }
+              </CustomTooltip>
+            )
+          ) : null}
+        </div>
+        <div className="remixui_help-container">
+          <CustomTooltip placement="right" tooltipText={<FormattedMessage id="home.helpAndResources" defaultMessage="Help & Resources" />}>
+            <button
+              className="remixui_help-btn"
+              data-id="helpMenuButton"
+              aria-expanded={helpMenuOpen}
+              onClick={() => setHelpMenuOpen((prev) => !prev)}
+            >
+              <i className="fas fa-circle-info" aria-hidden="true"></i>
+            </button>
+          </CustomTooltip>
+          {helpMenuOpen && <HelpMenu onClose={() => setHelpMenuOpen(false)} />}
         </div>
       </div>
     </div>

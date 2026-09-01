@@ -13,13 +13,13 @@ const defaultCompilerParameters = {
   evmVersion: null, // compiler default
   language: 'Solidity',
   useFileConfiguration: false,
-  configFilePath: "compiler_config.json"
 }
 export class CompilerClientApi extends CompilerApiMixin(PluginClient) implements ICompilerApi {
   constructor () {
     super()
     createClient(this as any)
-    this.compileTabLogic = new CompileTabLogic(this, this.contentImport)
+    // Use default (legacy) Compiler in the plugin app; DependencyResolvingCompiler is only wired in main app
+    this.compileTabLogic = new CompileTabLogic(this)
     this.compiler = this.compileTabLogic.compiler
     this.compileTabLogic.init()
     this.initCompilerApi()
@@ -32,8 +32,7 @@ export class CompilerClientApi extends CompilerApiMixin(PluginClient) implements
       version: localStorage.getItem('version') || defaultCompilerParameters.version,
       evmVersion: localStorage.getItem('evmVersion') || defaultCompilerParameters.evmVersion, // default
       language: localStorage.getItem('language') || defaultCompilerParameters.language,
-      useFileConfiguration: localStorage.getItem('useFileConfiguration') === 'true',
-      configFilePath: localStorage.getItem('configFilePath') || defaultCompilerParameters.configFilePath
+      useFileConfiguration: localStorage.getItem('useFileConfiguration') === 'true'
     }
     return params
   }

@@ -3,14 +3,14 @@ import {Registry} from '@remix-project/remix-lib'
 var remixLib = require('@remix-project/remix-lib')
 var EventsDecoder = remixLib.execution.EventsDecoder
 
-export function makeUdapp (blockchain, compilersArtefacts, logHtmlCallback) {
+export function makeUdapp (blockchain, logHtmlCallback) {
   // ----------------- Tx listener -----------------
   const _transactionReceipts = {}
   const transactionReceiptResolver = (tx, cb) => {
     if (_transactionReceipts[tx.hash]) {
       return cb(null, _transactionReceipts[tx.hash])
     }
-    let res = blockchain.web3().eth.getTransactionReceipt(tx.hash, (error, receipt) => {
+    let res = blockchain.web3().getTransactionReceipt(tx.hash, (error, receipt) => {
       if (error) {
         return cb(error)
       }
@@ -29,9 +29,10 @@ export function makeUdapp (blockchain, compilersArtefacts, logHtmlCallback) {
 
   const txlistener = blockchain.getTxListener({
     api: {
-      contracts: function () {
-        if (compilersArtefacts.__last) return compilersArtefacts.getAllContractDatas()
-        return null
+      contracts: async function () {
+        const lastCompilationResult = await blockchain.call('compilerArtefacts', 'getLastCompilationResult')
+
+        if (lastCompilationResult) return await blockchain.call('compilerArtefacts', 'getAllContractDatas')
       },
       resolveReceipt: transactionReceiptResolver
     }
